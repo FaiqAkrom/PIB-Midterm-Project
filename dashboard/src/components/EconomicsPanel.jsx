@@ -94,7 +94,7 @@ export default function EconomicsPanel({ economics = {}, siloInfo = {} }) {
               <span className="text-sm font-normal text-textMuted"> / 100</span>
             </span>
           </div>
-          <div className="w-full bg-cardBorder h-1.5 rounded-full overflow-hidden">
+          <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
             <div
               className={`h-full transition-all duration-500 ${
                 riskScore > 50 ? 'bg-statusDanger' : riskScore > 20 ? 'bg-statusWarn' : 'bg-statusGreen'

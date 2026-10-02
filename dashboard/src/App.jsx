@@ -16,8 +16,8 @@ import {
 } from './services/api';
 
 export default function App() {
-  // Navigation Tab: 'overview' | 'sensor' | 'culture' | 'finance'
-  const [activeTab, setActiveTab] = useState('overview');
+  // Navigation View: 'farm' (Main My Farm layout) | 'sensor' | 'culture' | 'finance'
+  const [activeView, setActiveView] = useState('farm');
 
   // Silo & Locale States
   const [silos, setSilos] = useState([
@@ -30,8 +30,8 @@ export default function App() {
 
   // Telemetry & Fan State
   const [telemetryHistory, setTelemetryHistory] = useState([]);
-  const [currentTemp, setCurrentTemp] = useState(27.4);
-  const [currentHum, setCurrentHum] = useState(64.0);
+  const [currentTemp, setCurrentTemp] = useState(30.0);
+  const [currentHum, setCurrentHum] = useState(65.0);
   const [currentGas, setCurrentGas] = useState(18);
   const [fanOn, setFanOn] = useState(false);
   const [isFanManual, setIsFanManual] = useState(false);
@@ -48,7 +48,16 @@ export default function App() {
 
   const [isOnline, setIsOnline] = useState(true);
   const [timeRange, setTimeRange] = useState('1h');
-  const [isSimulating, setIsSimulating] = useState(false);
+  const [toastMessage, setToastMessage] = useState(null);
+  const [showSimulator, setShowSimulator] = useState(false);
+
+  // Toast notification helper
+  const showToast = (msg) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage(null);
+    }, 2800);
+  };
 
   // 1. Inisialisasi Data Awal
   useEffect(() => {
@@ -86,21 +95,15 @@ export default function App() {
         if (teleRes?.data && teleRes.data.length > 0) {
           setTelemetryHistory(teleRes.data);
           const latest = teleRes.data[0];
-          setCurrentTemp(Number(latest.temp) || 27.4);
-          setCurrentHum(Number(latest.humidity) || 64.0);
-          // normalisasi gas display (ppm scale)
+          setCurrentTemp(Number(latest.temp) || 30.0);
+          setCurrentHum(Number(latest.humidity) || 65.0);
           const rawGas = Number(latest.gas) || 18;
           setCurrentGas(rawGas > 150 ? Math.round(rawGas / 10) : rawGas);
           setFanOn(Boolean(latest.fan_on));
         }
 
-        if (alertsRes?.data) {
-          setAlerts(alertsRes.data);
-        }
-
-        if (ecoRes?.economics) {
-          setEconomics(ecoRes.economics);
-        }
+        if (alertsRes?.data) setAlerts(alertsRes.data);
+        if (ecoRes?.economics) setEconomics(ecoRes.economics);
       } catch (err) {
         console.warn('[LOAD SILO DATA ERROR]:', err.message);
       }
@@ -147,144 +150,69 @@ export default function App() {
     return () => unsubscribe();
   }, [selectedSiloId]);
 
-  // Status Evaluasi (Safe / Warn / Danger)
+  // Status Evaluasi
   const evaluatedStatus = useMemo(() => {
-    if (currentHum >= 78 || currentGas >= 60 || currentTemp >= 35) {
+    if (currentHum >= 75 || currentGas >= 50 || currentTemp >= 34) {
       return {
         level: 'danger',
-        lossPct: 12.5,
-        color: '#DE4A4A',
-        badgeClass: 'bg-rose-50 text-statusDanger border border-rose-200',
-        probeColor: '#DE4A4A',
-        grainFillColor: '#DE4A4A',
-        humLabel: 'Kritis',
-        gasLabel: 'Terdeteksi Fermentasi',
-        humSubtitle: 'Bahaya pembusukan aktif!'
+        label: 'Dangerous level',
+        color: '#EF4444',
+        needleDeg: 45,
+        pestRisk: 'High Risk'
       };
     } else if (currentHum >= 70 || currentGas >= 35 || currentTemp >= 31) {
       return {
-        level: 'warn',
-        lossPct: 3.5,
-        color: '#E29E1B',
-        badgeClass: 'bg-amber-50 text-statusWarn border border-amber-200',
-        probeColor: '#E29E1B',
-        grainFillColor: '#E29E1B',
-        humLabel: 'Waspada',
-        gasLabel: 'Uap Fermentasi Awal',
-        humSubtitle: 'Uap lembap meningkat'
+        level: 'warning',
+        label: 'Warning level',
+        color: '#F59E0B',
+        needleDeg: 15,
+        pestRisk: 'Moderate'
       };
     }
     return {
       level: 'safe',
-      lossPct: 0,
-      color: '#22A358',
-      badgeClass: 'bg-emeraldLight text-statusGreen',
-      probeColor: '#22A358',
-      grainFillColor: '#22A358',
-      humLabel: 'Normal',
-      gasLabel: 'Bersih & Segar',
-      humSubtitle: 'Kondisi seimbang optimal'
+      label: 'Optimal level',
+      color: '#B5EA3A',
+      needleDeg: -35,
+      pestRisk: 'Low Risk'
     };
   }, [currentTemp, currentHum, currentGas]);
 
-  // Silo Info & Valuasi Aset Terlindungi
   const selectedSilo = silos.find(s => s.id === selectedSiloId) || silos[0];
   const stokKg = selectedSilo?.stok_kg || 5000;
-  const hargaPerKg = selectedSilo?.harga_per_kg || 13500;
-  const totalAssetVal = stokKg * hargaPerKg; // default: 5000 * 13500 = Rp 67.500.000 atau Rp 64.000.000
-  const nominalKerugian = (evaluatedStatus.lossPct / 100) * totalAssetVal;
 
-  // Arc Gauge Suhu (Rentang 20°C - 42°C)
-  const pctArc = Math.min(100, Math.max(0, ((currentTemp - 20) / (42 - 20)) * 100));
-
-  // Teks Kearifan Budaya Dinamis Sesuai Profil
-  const culturalWisdom = useMemo(() => {
-    if (cultureProfile === 'jawa') {
-      if (evaluatedStatus.level === 'danger') {
-        return {
-          title: '"Awas! Gabah Kepanasen & Mambet"',
-          body: 'Konsentrasi gas fermentasi jamur dan kelembapan sangat tinggi! Segera jalankan kipas dan lakukan pembalikan gabah.'
-        };
-      }
-      if (evaluatedStatus.level === 'warn') {
-        return {
-          title: '"Hawa Sumuk Lan Anyep"',
-          body: 'Kondensasi uap meningkat di dalam tumpukan gabah. Diperlukan sirkulasi udara berkala agar tidak memicu bau apek.'
-        };
-      }
-      return {
-        title: '"Gabah Ayem, Hawa Adhem Becik"',
-        body: 'Mikroklimat stabil sesuai kaidah lumbung tradisional. Jamur pembusuk terkendali penuh dan tidak ada risiko susut bobot.'
-      };
-    } else if (cultureProfile === 'petani') {
-      if (evaluatedStatus.level === 'danger') {
-        return {
-          title: '"Bahaya Kritis Pembusukan!"',
-          body: 'Suhu tumpukan dan kelembapan ekstrem. Jamur aktif merusak gabah. Blower sirkulasi harus menyala penuh.'
-        };
-      }
-      if (evaluatedStatus.level === 'warn') {
-        return {
-          title: '"Waspada Lembap Naik"',
-          body: 'Uap air tumpukan melebihi ambang batas aman. Jalankan sirkulasi ventilasi agar tidak menimbulkan jamur.'
-        };
-      }
-      return {
-        title: '"Lumbung Aman & Terkendali"',
-        body: 'Kondisi udara sejuk kering. Kualitas gabah terjamin aman dari jamur dan pembusukan biologis.'
-      };
-    }
-    // Default: Sunda (Kasepuhan Leuit)
-    if (evaluatedStatus.level === 'danger') {
-      return {
-        title: '"Gelar Bahaya! Pare Kakeueum Hawa Buruk"',
-        body: 'Hawa pengap jeung beueus pisan, pare kakeueum uap buruk. Kipas ventilasi hurung pinuh, buru pariksa tumpukan pare!'
-      };
-    }
-    if (evaluatedStatus.level === 'warn') {
-      return {
-        title: '"Kudu Taliti, Pare Mimiti Beueus"',
-        body: 'Aya tanda-tanda hawa beueus haneut di jero leuit. Angin-angin kudu dibuka sangkan hawa seger ngalir lancar.'
-      };
-    }
-    return {
-      title: '"Leuit Tengtrem, Hawa Sejuk Rahayu"',
-      body: 'Hawa leuit seger, gabah garing sampurna, teu aya tanda haseum atawa beueus. Padi aman kajaga berkah.'
-    };
-  }, [cultureProfile, evaluatedStatus.level]);
-
-  // Handler Ganti Kipas
+  // Toggle Fan / Watering
   const handleToggleFan = async () => {
     const nextState = !fanOn;
     setIsFanManual(true);
     setFanOn(nextState);
 
+    showToast(nextState ? '💨 Sirkulasi Blower / Ventilasi dinyalakan' : '⏹️ Sirkulasi Blower dimatikan');
+
     try {
       await setFanState(selectedSiloId, nextState);
     } catch (e) {
-      console.warn('Gagal sinkron status kipas ke backend:', e.message);
+      console.warn('Gagal sinkron status kipas:', e.message);
     }
   };
 
-  // Handler Injeksi Skenario Uji Simulator
-  const applyScenario = async (type) => {
-    setIsSimulating(true);
+  // Quick preset apply
+  const applyPreset = async (type) => {
     let t = 27.4, h = 64, g = 18;
     if (type === 'warn') {
-      t = 31.8;
-      h = 74;
-      g = 39;
+      t = 31.8; h = 74; g = 39;
+      showToast('⚠️ Skenario Lembap diterapkan');
     } else if (type === 'danger') {
-      t = 37.0;
-      h = 85;
-      g = 88;
+      t = 36.5; h = 82; g = 85;
+      showToast('🚨 Skenario Bahaya Jamur diterapkan');
+    } else {
+      showToast('✅ Skenario Normal Sejuk diterapkan');
     }
 
     setCurrentTemp(t);
     setCurrentHum(h);
     setCurrentGas(g);
 
-    // Kirim juga ke REST backend jika tersedia agar konsisten
     try {
       await fetch(`http://localhost:3001/api/telemetry`, {
         method: 'POST',
@@ -298,768 +226,805 @@ export default function App() {
       });
     } catch (e) {
       // ignore offline fallback
-    } finally {
-      setIsSimulating(false);
     }
   };
 
-  // Handler Slider Virtual Sensor
-  const handleSliderChange = (t, h, g) => {
-    if (t !== undefined) setCurrentTemp(t);
-    if (h !== undefined) setCurrentHum(h);
-    if (g !== undefined) setCurrentGas(g);
-  };
-
   return (
-    <div className="bg-appBg text-textTitle font-sans antialiased min-h-screen flex selection:bg-emeraldPrimary selection:text-white w-full">
-      {/* SIDEBAR NAVIGATION (SLIM ICONIC) */}
-      <aside className="w-16 sm:w-20 bg-cardBg border-r border-cardBorder flex flex-col items-center py-6 justify-between flex-shrink-0 z-20">
-        <div className="flex flex-col items-center space-y-7 w-full">
-          {/* App Logo */}
-          <div className="w-10 h-10 rounded-xl bg-emeraldLight flex items-center justify-center text-emeraldPrimary font-bold text-lg shadow-sm">
-            <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+    <div className="w-full max-w-[1580px] bg-[#D7DDDE] rounded-[2.5rem] p-3 sm:p-5 lg:p-7 shadow-2xl flex flex-col lg:flex-row gap-5 relative overflow-hidden border border-white/40 my-auto">
+
+      {/* TOAST POPUP */}
+      {toastMessage && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900/90 text-white px-5 py-2.5 rounded-full text-xs font-semibold backdrop-blur-lg shadow-2xl z-50 transition-all duration-300 transform animate-bounce">
+          {toastMessage}
+        </div>
+      )}
+
+      {/* ================= LEFT SLIM SIDEBAR ================= */}
+      <aside className="hidden lg:flex flex-col justify-between items-center py-3 px-2 w-16 bg-[#EEF2F3]/60 backdrop-blur-md rounded-2xl border border-white/60 shrink-0">
+        <div className="flex flex-col items-center gap-7 w-full">
+          {/* App Brand Logo Icon */}
+          <button
+            onClick={() => setActiveView('farm')}
+            className="w-11 h-11 bg-black text-white rounded-2xl flex items-center justify-center shadow-md hover:scale-105 transition-transform cursor-pointer"
+            title="My Farm - Central Dashboard"
+          >
+            <svg className="w-6 h-6 fill-current text-white" viewBox="0 0 24 24">
+              <path d="M17 8C8 10 5.9 16.17 3.82 21.34L5.71 22l1-2.3A9.49 9.49 0 0 0 11.23 21c3.84 0 6.6-1.57 8.35-4.13C21.4 14.2 22 10.9 22 8c0-.6 0-1-.07-1.42A7.32 7.32 0 0 0 17 8zM5.5 12c1.78-2.6 4.38-4.66 7.42-5.74A11.16 11.16 0 0 0 12 3a9 9 0 0 0-9 9c0 .7.1 1.38.28 2.03A12.72 12.72 0 0 1 5.5 12z" />
             </svg>
-          </div>
+          </button>
 
-          {/* Nav Icons */}
-          <nav className="flex flex-col space-y-3 w-full px-2">
+          {/* Navigation Icons */}
+          <nav className="flex flex-col gap-4 items-center">
+            {/* 1. Main Farm View */}
             <button
-              onClick={() => setActiveTab('overview')}
-              className={`w-full py-3 rounded-xl flex items-center justify-center transition cursor-pointer ${
-                activeTab === 'overview'
-                  ? 'bg-emeraldLight text-emeraldPrimary shadow-pill'
-                  : 'text-textMuted hover:bg-emeraldLight/60 hover:text-emeraldPrimary'
+              onClick={() => setActiveView('farm')}
+              className={`w-10 h-10 rounded-xl transition flex items-center justify-center cursor-pointer ${
+                activeView === 'farm'
+                  ? 'bg-white/90 text-slate-900 shadow-sm'
+                  : 'text-slate-500 hover:bg-white/60 hover:text-slate-800'
               }`}
-              title="Overview (Ringkasan)"
+              title="Overview (My Farm)"
             >
-              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="3" width="7" height="7" rx="1.5" />
-                <rect x="14" y="3" width="7" height="7" rx="1.5" />
-                <rect x="14" y="14" width="7" height="7" rx="1.5" />
-                <rect x="3" y="14" width="7" height="7" rx="1.5" />
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
               </svg>
             </button>
 
+            {/* 2. Sensor IoT Trends */}
             <button
-              onClick={() => setActiveTab('sensor')}
-              className={`w-full py-3 rounded-xl flex items-center justify-center transition cursor-pointer ${
-                activeTab === 'sensor'
-                  ? 'bg-emeraldLight text-emeraldPrimary shadow-pill'
-                  : 'text-textMuted hover:bg-emeraldLight/60 hover:text-emeraldPrimary'
+              onClick={() => setActiveView('sensor')}
+              className={`w-10 h-10 rounded-xl transition flex items-center justify-center cursor-pointer ${
+                activeView === 'sensor'
+                  ? 'bg-white/90 text-slate-900 shadow-sm'
+                  : 'text-slate-500 hover:bg-white/60 hover:text-slate-800'
               }`}
-              title="Monitoring (Sensor IoT)"
+              title="Sensor IoT Trends"
             >
-              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
               </svg>
             </button>
 
+            {/* 3. Cultural Governance & Alerts */}
             <button
-              onClick={() => setActiveTab('culture')}
-              className={`w-full py-3 rounded-xl flex items-center justify-center transition cursor-pointer ${
-                activeTab === 'culture'
-                  ? 'bg-emeraldLight text-emeraldPrimary shadow-pill'
-                  : 'text-textMuted hover:bg-emeraldLight/60 hover:text-emeraldPrimary'
+              onClick={() => setActiveView('culture')}
+              className={`w-10 h-10 rounded-xl transition flex items-center justify-center cursor-pointer relative ${
+                activeView === 'culture'
+                  ? 'bg-white/90 text-slate-900 shadow-sm'
+                  : 'text-slate-500 hover:bg-white/60 hover:text-slate-800'
               }`}
-              title="Kearifan Budaya & Tata Kelola Adat"
+              title="Kearifan Budaya & Peringatan Adat"
             >
-              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <ellipse cx="12" cy="5" rx="9" ry="3" />
-                <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
-                <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              {alerts.length > 0 && (
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500" />
+              )}
+            </button>
+
+            {/* 4. Financial Economics */}
+            <button
+              onClick={() => setActiveView('finance')}
+              className={`w-10 h-10 rounded-xl transition flex items-center justify-center cursor-pointer ${
+                activeView === 'finance'
+                  ? 'bg-white/90 text-slate-900 shadow-sm'
+                  : 'text-slate-500 hover:bg-white/60 hover:text-slate-800'
+              }`}
+              title="Kalkulasi Finansial & Susut Ekonomi"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
             </button>
 
+            {/* 5. Virtual Simulator Toggle */}
             <button
-              onClick={() => setActiveTab('finance')}
-              className={`w-full py-3 rounded-xl flex items-center justify-center transition cursor-pointer ${
-                activeTab === 'finance'
-                  ? 'bg-emeraldLight text-emeraldPrimary shadow-pill'
-                  : 'text-textMuted hover:bg-emeraldLight/60 hover:text-emeraldPrimary'
+              onClick={() => setShowSimulator(!showSimulator)}
+              className={`w-10 h-10 rounded-xl transition flex items-center justify-center cursor-pointer ${
+                showSimulator
+                  ? 'bg-[#B5EA3A] text-slate-900 shadow-sm font-bold'
+                  : 'text-slate-500 hover:bg-white/60 hover:text-slate-800'
               }`}
-              title="Economic Insights (Kalkulasi Finansial)"
+              title="Stimulator Sensor IoT (Virtual Wokwi Controller)"
             >
-              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="12" y1="1" x2="12" y2="23" />
-                <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
               </svg>
             </button>
           </nav>
         </div>
 
-        {/* Bottom Status / Settings */}
-        <div className="flex flex-col items-center space-y-4">
+        {/* Bottom User Avatar */}
+        <div className="mt-8 flex flex-col items-center gap-3">
           <div
-            className={`w-2.5 h-2.5 rounded-full ${isOnline ? 'bg-statusGreen animate-pulse' : 'bg-statusDanger'}`}
-            title={isOnline ? 'Terhubung Realtime (MQTT/SSE)' : 'Terputus'}
+            className={`w-2.5 h-2.5 rounded-full ${isOnline ? 'bg-[#B5EA3A] ring-2 ring-[#B5EA3A]/40 animate-pulse' : 'bg-rose-500'}`}
+            title={isOnline ? 'Online Realtime' : 'Offline'}
           />
           <button
-            onClick={() => setActiveTab('overview')}
-            className="text-textMuted hover:text-textTitle transition cursor-pointer"
-            title="Pengaturan SiloGuard"
+            onClick={() => showToast('Petani Terverifikasi: FA (Admin Silo)')}
+            className="w-10 h-10 rounded-full bg-slate-300 hover:ring-2 ring-emerald-500 transition overflow-hidden flex items-center justify-center cursor-pointer"
           >
-            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="3" />
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            <svg className="w-6 h-6 text-slate-600" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
             </svg>
           </button>
         </div>
       </aside>
 
-      {/* MAIN VIEWPORT */}
-      <div className="flex-1 flex flex-col overflow-y-auto">
-        {/* TOP BAR (BRAND & PILL TABS) */}
-        <header className="h-20 bg-cardBg/90 backdrop-blur border-b border-cardBorder px-6 flex items-center justify-between sticky top-0 z-30">
-          <div className="flex items-center space-x-6">
-            <div className="flex items-center space-x-2">
-              <span className={`w-3 h-3 rounded-full ${isOnline ? 'bg-emeraldPrimary' : 'bg-statusDanger'} inline-block`} />
-              <h1 className="font-bold text-lg sm:text-xl text-textTitle tracking-tight">
-                SiloGuard <span className="text-xs font-semibold text-textMuted font-mono">v2.6 Digital Twin</span>
+      {/* ================= DASHBOARD MAIN CONTENT ================= */}
+      <main className="flex-1 flex flex-col gap-5 overflow-hidden">
+        {/* HEADER */}
+        <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          {/* Title & Sub-controls */}
+          <div className="flex items-center gap-4">
+            {activeView !== 'farm' && (
+              <button
+                onClick={() => setActiveView('farm')}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#E5EAEC] hover:bg-white text-xs font-semibold text-slate-600 shadow-sm border border-white/50 transition cursor-pointer"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+                Back
+              </button>
+            )}
+            <div>
+              <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900">
+                My Farm
               </h1>
-            </div>
-
-            {/* Pill Navigation Tabs (Like reference) */}
-            <div className="hidden md:flex items-center space-x-1 bg-appBg p-1.5 rounded-full border border-cardBorder text-xs font-semibold">
-              <button
-                onClick={() => setActiveTab('overview')}
-                className={`px-4 py-1.5 rounded-full transition cursor-pointer ${
-                  activeTab === 'overview'
-                    ? 'bg-cardBg text-emeraldPrimary shadow-pill'
-                    : 'text-textMuted hover:text-textTitle'
-                }`}
-              >
-                Ringkasan
-              </button>
-              <button
-                onClick={() => setActiveTab('sensor')}
-                className={`px-4 py-1.5 rounded-full transition cursor-pointer ${
-                  activeTab === 'sensor'
-                    ? 'bg-cardBg text-emeraldPrimary shadow-pill'
-                    : 'text-textMuted hover:text-textTitle'
-                }`}
-              >
-                Sensor IoT
-              </button>
-              <button
-                onClick={() => setActiveTab('culture')}
-                className={`px-4 py-1.5 rounded-full transition cursor-pointer ${
-                  activeTab === 'culture'
-                    ? 'bg-cardBg text-emeraldPrimary shadow-pill'
-                    : 'text-textMuted hover:text-textTitle'
-                }`}
-              >
-                Kearifan Budaya
-              </button>
-              <button
-                onClick={() => setActiveTab('finance')}
-                className={`px-4 py-1.5 rounded-full transition cursor-pointer ${
-                  activeTab === 'finance'
-                    ? 'bg-cardBg text-emeraldPrimary shadow-pill'
-                    : 'text-textMuted hover:text-textTitle'
-                }`}
-              >
-                Kalkulasi Finansial
-              </button>
+              <span className="text-xs font-medium text-slate-500">
+                {selectedSilo?.nama || 'Leuit Pangraksa Sri 01'} • {selectedSilo?.komoditas || 'Padi Ciherang (GKP)'}
+              </span>
             </div>
           </div>
 
-          {/* Right Controls & Utilities */}
-          <div className="flex items-center space-x-3">
-            {/* Pemilih Silo Aktif */}
-            <div className="hidden sm:flex items-center text-xs font-semibold bg-appBg rounded-xl px-2.5 py-1.5 border border-cardBorder">
-              <span className="text-textMuted mr-1.5">Lumbung:</span>
+          {/* Right Header Widget Group */}
+          <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+            {/* Field Operations / Silo Switcher Dropdown */}
+            <div className="relative">
               <select
                 value={selectedSiloId}
-                onChange={(e) => setSelectedSiloId(e.target.value)}
-                className="bg-transparent text-textTitle font-bold focus:outline-none cursor-pointer"
+                onChange={(e) => {
+                  setSelectedSiloId(e.target.value);
+                  showToast(`Lumbung dialihkan ke: ${e.target.value}`);
+                }}
+                className="flex items-center gap-2 px-4 py-2 bg-[#E3E8EA] hover:bg-white/90 rounded-full text-xs font-semibold text-slate-700 border border-white/60 shadow-sm transition cursor-pointer focus:outline-none"
               >
                 {silos.map(s => (
-                  <option key={s.id} value={s.id}>{s.nama}</option>
+                  <option key={s.id} value={s.id}>
+                    {s.nama} ({s.id})
+                  </option>
                 ))}
               </select>
             </div>
 
-            {/* Pemilih Profil Budaya */}
-            <div className="hidden sm:flex items-center text-xs font-semibold bg-emeraldLight text-emeraldPrimary rounded-xl px-2.5 py-1.5 border border-emerald-200">
-              <select
-                value={cultureProfile}
-                onChange={async (e) => {
-                  const val = e.target.value;
-                  setCultureProfile(val);
-                  try {
-                    await updateCultureProfile(val);
-                  } catch (err) {
-                    console.warn(err);
-                  }
-                }}
-                className="bg-transparent font-bold focus:outline-none cursor-pointer"
-              >
-                <option value="sunda">Tradisi Sunda (Leuit)</option>
-                <option value="jawa">Tradisi Jawa (Lumbung)</option>
-                <option value="petani">Bahasa Petani Lugas</option>
-              </select>
+            {/* Weather Status Card (Real-Time IoT Climate Integration) */}
+            <div className="glass-card px-4 py-2.5 flex flex-col justify-between min-w-[190px]">
+              <div className="flex items-center justify-between gap-3 text-[11px] font-medium text-slate-600">
+                <span className="flex items-center gap-1">
+                  <svg className="w-3.5 h-3.5 text-amber-500" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" />
+                  </svg>
+                  Weather
+                </span>
+                <span className="text-slate-500">
+                  {currentHum > 75 ? 'Humid' : currentTemp > 32 ? 'Warm' : 'Cloudy'}
+                </span>
+              </div>
+
+              <div className="flex items-baseline justify-between mt-1">
+                <div className="text-2xl font-bold text-slate-800 font-mono">
+                  {currentTemp.toFixed(0)}<span className="text-sm font-semibold text-slate-500 align-top">°C</span>
+                </div>
+                <div className="flex flex-col text-[10px] text-slate-500 text-right">
+                  <span>≈ Wind</span>
+                  <span>☼ {Math.round(currentHum)}%</span>
+                </div>
+              </div>
+
+              {/* Heat scale bar */}
+              <div className="mt-1.5 flex items-center justify-between text-[9px] text-slate-500">
+                <span>28°</span><span>29°</span><span>31°</span><span>32°</span><span>33°</span>
+              </div>
+              <div className="w-full h-1.5 rounded-full bg-gradient-to-r from-lime-400 via-amber-400 to-rose-500 mt-0.5" />
             </div>
 
-            {/* Alert Bell Button */}
-            <button
-              onClick={() => setActiveTab('culture')}
-              className="relative w-9 h-9 rounded-full bg-appBg flex items-center justify-center text-textMuted hover:text-textTitle transition cursor-pointer"
-              title="Notifikasi & Peringatan"
+            {/* Apples Alert Card */}
+            <div
+              onClick={() => showToast('Komoditas Apel/Ciherang: Kelembapan tumpukan terpantau')}
+              className="glass-card p-2 flex flex-col justify-between w-28 h-24 relative overflow-hidden group hover:scale-[1.02] transition cursor-pointer"
             >
-              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-                <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-              </svg>
-              {alerts.length > 0 && (
-                <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-statusDanger" />
-              )}
-            </button>
+              <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-800 z-10">
+                <span className="w-2 h-2 rounded-full bg-green-500" /> Apples
+              </div>
+              <div className="absolute inset-0 z-0">
+                <img
+                  src="https://images.unsplash.com/photo-1560806887-1e4cd0b6cbd6?auto=format&fit=crop&w=260&q=80"
+                  alt="Green Apples"
+                  className="w-full h-full object-cover rounded-2xl opacity-80 group-hover:scale-105 transition-all duration-300"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-white/40" />
+              </div>
+              {/* Pest risk badge */}
+              <div className="z-10 mt-auto">
+                <div className={`rounded-full px-2 py-0.5 text-[9px] font-bold flex items-center gap-1 shadow-sm backdrop-blur-sm ${
+                  evaluatedStatus.level === 'danger' ? 'bg-red-500/90 text-white' : 'bg-lime-500/90 text-black'
+                }`}>
+                  <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                  {evaluatedStatus.pestRisk}
+                </div>
+              </div>
+            </div>
 
-            {/* User Avatar */}
-            <div className="flex items-center space-x-2 pl-2">
-              <div className="w-9 h-9 rounded-full bg-emeraldPrimary text-white flex items-center justify-center font-bold text-xs shadow-sm">
-                FA
+            {/* Cherries Alert Card */}
+            <div
+              onClick={() => showToast('Komoditas Cherries/IR-64: Terproteksi sistem lumbung')}
+              className="glass-card p-2 flex flex-col justify-between w-28 h-24 relative overflow-hidden group hover:scale-[1.02] transition cursor-pointer"
+            >
+              <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-800 z-10">
+                <span className="w-2 h-2 rounded-full bg-rose-500" /> Cherries
+              </div>
+              <div className="absolute inset-0 z-0">
+                <img
+                  src="https://images.unsplash.com/photo-1528825871115-3581a5387919?auto=format&fit=crop&w=260&q=80"
+                  alt="Cherries"
+                  className="w-full h-full object-cover rounded-2xl opacity-85 group-hover:scale-105 transition-all duration-300"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-white/40" />
+              </div>
+              {/* Pest risk badge */}
+              <div className="z-10 mt-auto">
+                <div className="bg-red-500/90 text-white rounded-full px-2 py-0.5 text-[9px] font-bold flex items-center gap-1 shadow-sm backdrop-blur-sm">
+                  <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                  pest risk
+                </div>
               </div>
             </div>
           </div>
         </header>
 
-        {/* CONTENT GRID */}
-        <main className="p-6 space-y-6 max-w-7xl w-full mx-auto flex-1">
-          {/* VIEW: RINGKASAN (OVERVIEW) */}
-          {activeTab === 'overview' && (
-            <>
-              {/* TOP METRIC CARDS ROW */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {/* Metric 1: Date & Status */}
-                <div className="bg-cardBg p-4 rounded-2xl border border-cardBorder shadow-soft flex flex-col justify-between">
-                  <div className="flex items-center space-x-1.5 text-xs text-textMuted font-medium">
-                    <span className="w-2 h-2 rounded-full bg-statusGreen" />
-                    <span>Jadwal Lumbung</span>
-                  </div>
-                  <div className="mt-3">
-                    <div className="text-3xl font-extrabold text-textTitle font-mono">
-                      {new Date().toLocaleDateString('id-ID', { day: '2-digit' })}
-                    </div>
-                    <span className="text-xs text-textMuted font-medium">
-                      {new Date().toLocaleDateString('id-ID', { month: 'long' })}, Siklus Panen
-                    </span>
-                  </div>
-                </div>
-
-                {/* Metric 2: Total Gabah / Volume */}
-                <div className="bg-cardBg p-4 rounded-2xl border border-cardBorder shadow-soft flex flex-col justify-between">
-                  <div className="flex items-center justify-between text-xs text-textMuted font-medium">
-                    <span>Stok Terkelola</span>
-                    <span className="text-emeraldPrimary bg-emeraldLight px-2 py-0.5 rounded-full text-[11px] font-semibold">
-                      Aktif
-                    </span>
-                  </div>
-                  <div className="mt-3">
-                    <div className="text-3xl font-extrabold text-textTitle font-mono">
-                      {(stokKg / 1000).toFixed(1)} <span className="text-base font-normal text-textMuted">Ton</span>
-                    </div>
-                    <span className="text-xs text-textMuted">Gabah Kering Panen (GKP)</span>
-                  </div>
-                </div>
-
-                {/* Metric 3: Active Zones */}
-                <div className="bg-cardBg p-4 rounded-2xl border border-cardBorder shadow-soft flex flex-col justify-between">
-                  <div className="flex items-center justify-between text-xs text-textMuted font-medium">
-                    <span>Sektor Pemantauan</span>
-                    <span className="text-statusGreen font-bold font-mono">3 Probe</span>
-                  </div>
-                  <div className="mt-3">
-                    <div className="text-3xl font-extrabold text-textTitle font-mono">
-                      04 <span className="text-base font-normal text-textMuted">Ruang</span>
-                    </div>
-                    <span className="text-xs text-textMuted truncate" title={selectedSilo?.nama}>
-                      {selectedSilo?.nama || 'Lumbung Komunal A'}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Metric 4: Health Index / Efficiency */}
-                <div className="bg-cardBg p-4 rounded-2xl border border-cardBorder shadow-soft flex flex-col justify-between">
-                  <div className="flex items-center justify-between text-xs text-textMuted font-medium">
-                    <span>Indeks Kesehatan Padi</span>
-                    <span className="text-statusGreen text-[11px] font-semibold font-mono">
-                      {(100 - (economics?.risk_score ?? 10)).toFixed(1)}%
-                    </span>
-                  </div>
-                  <div className="mt-3">
-                    <div className="text-3xl font-extrabold text-emeraldPrimary font-mono">
-                      {(100 - (economics?.risk_score ?? 10)).toFixed(1)}%
-                    </div>
-                    <span className="text-xs text-textMuted">Bebas Pembusukan & Jamur</span>
-                  </div>
-                </div>
+        {/* VIRTUAL STIMULATOR TOOLBAR (WHEN TOGGLED) */}
+        {showSimulator && (
+          <div className="glass-card p-4 flex flex-col sm:flex-row items-center justify-between gap-3 border-2 border-[#B5EA3A]">
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-700">IoT Simulator:</span>
+              <div className="flex gap-1.5 text-xs font-semibold">
+                <button
+                  onClick={() => applyPreset('safe')}
+                  className="px-3 py-1 rounded-lg bg-emerald-100 text-emerald-800 hover:bg-emerald-200 transition cursor-pointer"
+                >
+                  Normal
+                </button>
+                <button
+                  onClick={() => applyPreset('warn')}
+                  className="px-3 py-1 rounded-lg bg-amber-100 text-amber-800 hover:bg-amber-200 transition cursor-pointer"
+                >
+                  Lembap
+                </button>
+                <button
+                  onClick={() => applyPreset('danger')}
+                  className="px-3 py-1 rounded-lg bg-rose-100 text-rose-800 hover:bg-rose-200 transition cursor-pointer"
+                >
+                  Bahaya Jamur
+                </button>
               </div>
+            </div>
 
-              {/* MAIN ISOMETRIC / FIELD VISUALIZER SECTION */}
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                {/* LEFT COLUMN: SENSOR DIALS & RESOURCE PROGRESS (4 COLS) */}
-                <div className="lg:col-span-4 space-y-4 flex flex-col">
-                  {/* Climate / Sensor Gauge Card */}
-                  <div className="bg-cardBg p-5 rounded-2xl border border-cardBorder shadow-soft flex-1 flex flex-col justify-between">
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs font-bold text-textMuted uppercase tracking-wider">
-                        Telemetri Mikroklimat
-                      </span>
-                      <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-emeraldLight text-emeraldPrimary font-bold">
-                        Wokwi ESP32
-                      </span>
+            <div className="flex items-center gap-4 text-xs font-mono">
+              <label className="flex items-center gap-1.5">
+                <span>Suhu:</span>
+                <input
+                  type="range"
+                  min="20"
+                  max="42"
+                  step="0.5"
+                  value={currentTemp}
+                  onChange={(e) => setCurrentTemp(parseFloat(e.target.value))}
+                  className="w-20 accent-slate-800 cursor-pointer"
+                />
+                <span className="font-bold">{currentTemp.toFixed(1)}°C</span>
+              </label>
+
+              <label className="flex items-center gap-1.5">
+                <span>RH:</span>
+                <input
+                  type="range"
+                  min="40"
+                  max="95"
+                  step="1"
+                  value={currentHum}
+                  onChange={(e) => setCurrentHum(parseFloat(e.target.value))}
+                  className="w-20 accent-slate-800 cursor-pointer"
+                />
+                <span className="font-bold">{Math.round(currentHum)}%</span>
+              </label>
+            </div>
+          </div>
+        )}
+
+        {/* MAIN VIEWPORT: MY FARM OVERVIEW */}
+        {activeView === 'farm' && (
+          <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-stretch">
+            {/* ================= LEFT & MIDDLE COLUMN ================= */}
+            <div className="xl:col-span-6 flex flex-col gap-4">
+
+              {/* Top Section: Schedule & Daily Tasks */}
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-4">
+                {/* Big Schedule date card */}
+                <div className="sm:col-span-5 glass-card p-5 flex flex-col justify-between bg-gradient-to-b from-white/80 to-[#E4EAEB]/80 min-h-[160px]">
+                  <div>
+                    <div className="flex items-center gap-2 text-xs font-bold text-slate-500 tracking-wide uppercase">
+                      <span className="w-2 h-2 rounded bg-slate-600" />
+                      Schedule
                     </div>
-
-                    {/* Radial Gauge Visual (Suhu) */}
-                    <div className="flex flex-col items-center justify-center my-4">
-                      <div className="relative w-36 h-36 flex items-center justify-center">
-                        {/* SVG Arc Gauge */}
-                        <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
-                          <path
-                            className="text-gray-100"
-                            strokeWidth="3.5"
-                            stroke="currentColor"
-                            fill="none"
-                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                          />
-                          <path
-                            className="transition-all duration-700"
-                            strokeDasharray={`${pctArc * 0.75}, 100`}
-                            strokeWidth="3.5"
-                            strokeLinecap="round"
-                            stroke={evaluatedStatus.color}
-                            fill="none"
-                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                          />
-                        </svg>
-                        <div className="absolute flex flex-col items-center">
-                          <span className="text-3xl font-extrabold text-textTitle font-mono">
-                            {currentTemp.toFixed(1)}
-                          </span>
-                          <span className="text-xs text-textMuted font-medium">°C Suhu Inti</span>
-                        </div>
-                      </div>
-                      <span className="text-xs text-textMuted mt-1">Rentang ideal: 24.0°C – 30.0°C</span>
-                    </div>
-
-                    {/* Resource Breakdown (Air, Gas, Ventilasi) */}
-                    <div className="space-y-3 pt-3 border-t border-cardBorder">
-                      <div>
-                        <div className="flex justify-between text-xs font-semibold mb-1">
-                          <span className="text-textMuted">Kelembapan Nisbi (RH)</span>
-                          <span className="font-mono text-emeraldPrimary">
-                            {Math.round(currentHum)}% ({evaluatedStatus.humLabel})
-                          </span>
-                        </div>
-                        <div className="w-full bg-gray-100 h-2 rounded-full overflow-hidden">
-                          <div
-                            className="h-full rounded-full transition-all duration-500"
-                            style={{
-                              width: `${Math.min(100, Math.max(0, currentHum))}%`,
-                              backgroundColor: evaluatedStatus.color
-                            }}
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <div className="flex justify-between text-xs font-semibold mb-1">
-                          <span className="text-textMuted">Kadar Gas Bau / Amonia</span>
-                          <span className="font-mono text-emeraldPrimary">
-                            {Math.round(currentGas)} ppm ({evaluatedStatus.gasLabel})
-                          </span>
-                        </div>
-                        <div className="w-full bg-gray-100 h-2 rounded-full overflow-hidden">
-                          <div
-                            className="h-full rounded-full transition-all duration-500"
-                            style={{
-                              width: `${Math.min(100, (currentGas / 120) * 100)}%`,
-                              backgroundColor: evaluatedStatus.color
-                            }}
-                          />
-                        </div>
-                      </div>
-                    </div>
+                    <h2 className="text-xl font-bold text-slate-800 leading-snug mt-1">For The Day</h2>
                   </div>
 
-                  {/* Quick Toggle Blower Card (Thumb action friendly) */}
-                  <div className="bg-cardBg p-4 rounded-2xl border border-cardBorder shadow-soft flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <div
-                        className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
-                          fanOn ? 'bg-amber-50 text-accentOrange' : 'bg-gray-100 text-textMuted'
-                        }`}
-                      >
-                        <svg
-                          className={`w-5 h-5 ${fanOn ? 'fan-running' : ''}`}
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                        >
-                          <path d="M12 2v20M2 12h20" />
-                          <circle cx="12" cy="12" r="3" />
+                  <div className="flex items-baseline gap-2 mt-4">
+                    <span className="text-5xl font-black text-slate-900 tracking-tight font-mono">
+                      {new Date().getDate()}
+                    </span>
+                    <span className="text-sm font-semibold text-slate-600">
+                      {new Date().toLocaleString('en-US', { month: 'long' })}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Tasks list right side */}
+                <div className="sm:col-span-7 flex flex-col gap-3">
+                  {/* Task 1 (Blower Control) */}
+                  <div
+                    onClick={handleToggleFan}
+                    className="glass-card p-4 flex items-center justify-between hover:bg-white/90 transition shadow-sm cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
+                        fanOn ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-500'
+                      }`}>
+                        <svg className={`w-5 h-5 fill-current ${fanOn ? 'fan-running' : ''}`} viewBox="0 0 24 24">
+                          <path d="M12 2C9.5 2 7.5 3.5 7 5.5c-2.5.5-4.5 2.5-4.5 5.5 0 5.5 5 11 9.5 11s9.5-5.5 9.5-11c0-3-2-5-4.5-5.5-.5-2-2.5-3.5-5-3.5zm0 2c1.7 0 3 1.2 3.4 2.8-.7.2-1.5.5-2.2.9-.6-.6-1.5-1-2.4-1-.3 0-.6.1-.8.2C10.4 5.2 11.1 4 12 4z" />
                         </svg>
                       </div>
                       <div>
-                        <h4 className="text-xs font-bold text-textTitle">Blower Sirkulasi</h4>
-                        <p className="text-[11px] text-textMuted">
-                          {fanOn
-                            ? (isFanManual ? 'Manual Aktif' : 'Menyala Otomatis')
-                            : 'Siaga (Otomatis)'}
+                        <h3 className="text-sm font-bold text-slate-900 leading-tight">
+                          {fanOn ? 'Ventilation Blower' : 'Standby Blower'}
+                        </h3>
+                        <p className="text-xs text-slate-500 font-medium mt-0.5">
+                          {fanOn ? (isFanManual ? 'Manual Active' : 'Automatic Running') : 'Idle Standby'}
                         </p>
                       </div>
                     </div>
-                    <button
-                      onClick={handleToggleFan}
-                      className="px-3.5 py-2 rounded-xl bg-emeraldPrimary hover:bg-emeraldHover text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer"
-                    >
-                      <span>{fanOn ? 'Matikan' : 'Nyalakan'}</span>
-                    </button>
+                    <span className={`px-2.5 py-1 text-[11px] font-bold rounded-full transition ${
+                      fanOn ? 'bg-[#B5EA3A] text-slate-900' : 'bg-slate-200 text-slate-600'
+                    }`}>
+                      {fanOn ? 'In progress' : 'Idle'}
+                    </span>
+                  </div>
+
+                  {/* Task 2 */}
+                  <div
+                    onClick={() => setActiveView('culture')}
+                    className="glass-card p-4 flex items-center justify-between hover:bg-white/90 transition shadow-sm cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-green-100 flex items-center justify-center text-green-600">
+                        <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
+                          <path d="M20 10c0 4.99-3.34 9.17-8 10-4.66-.83-8-5.01-8-10 0-4.41 3.59-8 8-8 1.15 0 2.23.25 3.2.69C14.7 1.63 13.43 1 12 1 6.48 1 2 5.48 2 11c0 6.63 5.37 12 12 12s12-5.37 12-12c0-.34-.02-.67-.05-1H20z" />
+                          <circle cx="12" cy="11" r="7" />
+                        </svg>
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900 leading-tight">Pruning & Inspeksi</h3>
+                        <p className="text-xs text-slate-500 font-medium mt-0.5">Kearifan lokal lumbung</p>
+                      </div>
+                    </div>
+                    <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-[#B5EA3A] text-slate-900">
+                      In progress
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Middle Section: Gauges */}
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-4">
+                {/* Gauge 1: My Farm Workers / Core Condition */}
+                <div className="sm:col-span-5 glass-card p-4 flex flex-col justify-between">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                    <svg className="w-4 h-4 text-slate-500" fill="currentColor" viewBox="0 0 20 20">
+                      <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" />
+                    </svg>
+                    My Farm
+                  </div>
+
+                  {/* Gauge Semi-Circle Visualization */}
+                  <div className="relative flex flex-col items-center justify-center my-2">
+                    <svg viewBox="0 0 200 110" className="w-40 sm:w-44 overflow-visible">
+                      <defs>
+                        <linearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                          <stop offset="0%" stopColor="#84cc16" />
+                          <stop offset="50%" stopColor="#eab308" />
+                          <stop offset="100%" stopColor="#ef4444" />
+                        </linearGradient>
+                      </defs>
+                      {/* Background Arc */}
+                      <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="#E2E8F0" strokeWidth="8" strokeLinecap="round" />
+                      {/* Value Arc */}
+                      <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="url(#gaugeGrad)" strokeWidth="8" strokeDasharray="251.2" strokeDashoffset="65" strokeLinecap="round" />
+                      {/* Center Needle / Indicator line */}
+                      <g style={{ transform: `rotate(${evaluatedStatus.needleDeg}deg)`, transformOrigin: '100px 100px', transition: 'transform 0.7s cubic-bezier(0.4, 0, 0.2, 1)' }}>
+                        <line x1="100" y1="100" x2="100" y2="28" stroke="#FFFFFF" strokeWidth="3" strokeLinecap="round" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.25))" />
+                      </g>
+                      <circle cx="100" cy="100" r="5" fill="#475569" />
+                    </svg>
+                    {/* Center Metric Text */}
+                    <div className="text-center -mt-2">
+                      <span className="text-[11px] text-slate-500 font-medium block">Workers</span>
+                      <span className="text-2xl font-black text-slate-900 font-mono">50</span>
+                    </div>
                   </div>
                 </div>
 
-                {/* RIGHT COLUMN: ISOMETRIC SILO TWIN / INTERACTIVE FIELD (8 COLS) */}
-                <div className="lg:col-span-8 flex flex-col space-y-4">
-                  {/* Isometric Smart Silo Viewport */}
-                  <div className="relative bg-gradient-to-br from-[#2D6043] via-[#234F36] to-[#173826] rounded-3xl p-6 shadow-xl text-white overflow-hidden min-h-[380px] flex flex-col justify-between">
-                    {/* Grid Lines Background Pattern */}
-                    <div
-                      className="absolute inset-0 opacity-10 pointer-events-none"
-                      style={{
-                        backgroundSize: '32px 32px',
-                        backgroundImage:
-                          'linear-gradient(to right, #fff 1px, transparent 1px), linear-gradient(to bottom, #fff 1px, transparent 1px)'
-                      }}
-                    />
-
-                    {/* Top Floating Controls on Visualizer */}
-                    <div className="relative z-10 flex items-center justify-between">
-                      <div className="flex items-center space-x-2 bg-black/20 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10 text-xs">
-                        <span className={`w-2 h-2 rounded-full ${isOnline ? 'bg-statusGreen animate-pulse' : 'bg-statusDanger'}`} />
-                        <span className="font-medium">
-                          {selectedSilo?.nama || 'Silo Twin #01'} — Realtime Isometric
-                        </span>
-                      </div>
-
-                      {/* Pill Tools */}
-                      <div className="flex items-center space-x-1.5 bg-black/20 backdrop-blur-md p-1 rounded-full border border-white/10">
-                        <button
-                          onClick={() => setActiveTab('sensor')}
-                          className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-white/20 transition text-xs cursor-pointer"
-                          title="Lihat Detail Grafik Sensor"
-                        >
-                          📈
-                        </button>
-                        <button
-                          onClick={() => setActiveTab('culture')}
-                          className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-white/20 transition text-xs cursor-pointer"
-                          title="Lihat Kearifan Budaya"
-                        >
-                          🌾
-                        </button>
-                        <button
-                          onClick={() => setActiveTab('finance')}
-                          className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-white/20 transition text-xs cursor-pointer"
-                          title="Lihat Analisis Finansial"
-                        >
-                          💰
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Isometric Silo Graphic / SVG Vector inside Visualizer */}
-                    <div className="relative z-10 flex items-center justify-center my-2">
-                      <svg className="w-80 h-52 filter drop-shadow-2xl" viewBox="0 0 300 200" fill="none">
-                        {/* Roof Cone */}
-                        <polygon points="150,20 80,60 220,60" fill="#417D5A" stroke="#71A888" strokeWidth="2" />
-                        <line x1="150" y1="20" x2="150" y2="60" stroke="#71A888" strokeDasharray="2 2" />
-
-                        {/* Cylinder Body */}
-                        <rect x="80" y="60" width="140" height="95" rx="4" fill="#2A5A3F" stroke="#71A888" strokeWidth="2" />
-
-                        {/* Grain Heap Fill Line (Dynamic Color) */}
-                        <path
-                          d="M82,105 Q150,95 218,105 L218,153 L82,153 Z"
-                          fill={evaluatedStatus.grainFillColor}
-                          fillOpacity="0.45"
-                          stroke={evaluatedStatus.grainFillColor}
-                          strokeWidth="1.5"
-                          className="transition-all duration-700"
-                        />
-
-                        {/* Stilts / Kolong Lumbung */}
-                        <line x1="90" y1="155" x2="90" y2="185" stroke="#71A888" strokeWidth="3" />
-                        <line x1="125" y1="155" x2="125" y2="185" stroke="#71A888" strokeWidth="3" />
-                        <line x1="175" y1="155" x2="175" y2="185" stroke="#71A888" strokeWidth="3" />
-                        <line x1="210" y1="155" x2="210" y2="185" stroke="#71A888" strokeWidth="3" />
-
-                        {/* Sensor Probe Callout (Interactive dot) */}
-                        <circle
-                          cx="150"
-                          cy="115"
-                          r="5"
-                          fill={evaluatedStatus.probeColor}
-                          stroke="#FFFFFF"
-                          strokeWidth="2"
-                          className="transition-all duration-500"
-                        />
-                        <circle
-                          cx="150"
-                          cy="115"
-                          r="9"
-                          stroke={evaluatedStatus.probeColor}
-                          strokeWidth="1"
-                          className="animate-ping"
-                          opacity="0.6"
-                        />
-
-                        {/* Ventilation Rotor at Top Right */}
-                        <g
-                          id="isoBlowerRotor"
-                          className={fanOn ? 'fan-running' : ''}
-                          style={{ transformOrigin: '215px 50px' }}
-                        >
-                          <circle cx="215" cy="50" r="9" fill="#173826" stroke="#E87A38" strokeWidth="2" />
-                          <path d="M215,43 L215,57 M208,50 L222,50" stroke="#E87A38" strokeWidth="2" />
-                        </g>
+                {/* Gauge 2: Crop Distribution Meter */}
+                <div className="sm:col-span-7 glass-card p-4 flex flex-col justify-between">
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-1.5 font-bold text-slate-700">
+                      <svg className="w-4 h-4 text-emerald-600" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
                       </svg>
-
-                      {/* Floating Glassmorphic Telemetry Badge on Visualizer */}
-                      <div className="absolute bottom-4 right-4 bg-white/10 backdrop-blur-md border border-white/20 p-3.5 rounded-2xl shadow-lg max-w-[210px] text-left">
-                        <div className="flex items-center space-x-1.5 text-[11px] font-semibold text-emerald-200">
-                          <span className={`w-2 h-2 rounded-full ${evaluatedStatus.level === 'danger' ? 'bg-statusDanger' : evaluatedStatus.level === 'warn' ? 'bg-statusWarn' : 'bg-statusGreen'}`} />
-                          <span>Kelembapan Gabah</span>
+                      Crop Distribution
+                    </div>
+                    <div className="flex items-center gap-3 text-[11px] text-slate-600 font-medium">
+                      <div className="flex flex-col gap-0.5 text-right">
+                        <div className="flex items-center gap-2 justify-end">
+                          <span className="text-slate-400">● Ciherang</span>
+                          <span className="font-bold text-slate-700">38.5%</span>
+                          <span className="text-slate-500 text-[10px]">14.5 Ha</span>
                         </div>
-                        <div className="flex items-baseline space-x-1 mt-1">
-                          <span className="text-2xl font-bold font-mono">
-                            {currentHum.toFixed(1)}%
-                          </span>
+                        <div className="flex items-center gap-2 justify-end">
+                          <span className="text-rose-400">● IR-64</span>
+                          <span className="font-bold text-slate-700">32.3%</span>
+                          <span className="text-slate-500 text-[10px]">13.5 Ha</span>
                         </div>
-                        <div className="text-[11px] text-emerald-100/80 mt-0.5">
-                          {evaluatedStatus.humSubtitle}
+                        <div className="flex items-center gap-2 justify-end">
+                          <span className="text-amber-400">● Pandan W</span>
+                          <span className="font-bold text-slate-700">29.2%</span>
+                          <span className="text-slate-500 text-[10px]">18.5 Ha</span>
                         </div>
                       </div>
-                    </div>
-
-                    {/* Bottom Footnote inside Isometric Map */}
-                    <div className="relative z-10 flex items-center justify-between text-xs text-emerald-100/70 border-t border-white/10 pt-3">
-                      <span>Sektor: {selectedSilo?.lokasi || '01-Komunal Barat'}</span>
-                      <span>Kapasitas Efektif: {((stokKg / 10000) * 100).toFixed(0)}% Terisi</span>
                     </div>
                   </div>
 
-                  {/* BOTTOM ROW INSIGHTS: FORECAST & AI RECOMMENDATION */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* Financial Forecast Card */}
-                    <div className="bg-cardBg p-5 rounded-2xl border border-cardBorder shadow-soft flex flex-col justify-between">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <span className="text-xs font-bold text-textMuted uppercase">Valuasi Panen Terlindungi</span>
-                          <div className="text-2xl font-extrabold text-textTitle font-mono mt-0.5">
-                            Rp {totalAssetVal.toLocaleString('id-ID')}
-                          </div>
-                          <span className="text-[11px] text-textMuted">
-                            Variansi susut bobot: {evaluatedStatus.lossPct}%
-                          </span>
-                        </div>
-                        <div className="w-10 h-10 rounded-xl bg-emeraldLight text-emeraldPrimary flex items-center justify-center font-bold">
-                          Rp
-                        </div>
-                      </div>
-
-                      {/* Bar Comparison Chart */}
-                      <div className="mt-4 pt-3 border-t border-cardBorder flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
-                          <div className="w-7 h-12 bg-emeraldPrimary rounded-lg flex items-end justify-center pb-1 text-[10px] font-mono text-white font-bold">
-                            {(stokKg / 1000).toFixed(0)}T
-                          </div>
-                          <div
-                            className={`w-7 h-12 rounded-lg flex items-end justify-center pb-1 text-[10px] font-mono text-white font-bold ${
-                              evaluatedStatus.level === 'danger' ? 'bg-statusDanger' : evaluatedStatus.level === 'warn' ? 'bg-statusWarn' : 'bg-accentOrange/80'
-                            }`}
-                          >
-                            {evaluatedStatus.lossPct}%
-                          </div>
-                          <span className="text-xs text-textMuted">Rasio selamat vs risiko susut</span>
-                        </div>
-                        <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${evaluatedStatus.badgeClass}`}>
-                          {evaluatedStatus.level === 'safe'
-                            ? 'Rp 0 Terbuang'
-                            : `Rugi: Rp ${nominalKerugian.toLocaleString('id-ID')}`}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Cultural & AI Insight Card */}
-                    <div className="bg-cardBg p-5 rounded-2xl border border-cardBorder shadow-soft flex flex-col justify-between">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <div className="flex items-center space-x-1.5 text-xs font-bold text-emeraldPrimary">
-                            <span>✨</span>
-                            <span>Wawasan Budaya & Agroekologis</span>
-                          </div>
-                          <h3 className="text-sm font-bold text-textTitle mt-1">
-                            {culturalWisdom.title}
-                          </h3>
-                          <p className="text-xs text-textMuted mt-1 leading-relaxed">
-                            {culturalWisdom.body}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Action Link */}
-                      <div className="mt-4 pt-3 border-t border-cardBorder flex items-center justify-between">
-                        <span className="text-[11px] text-textMuted">Rekomendasi adaptasi pranata mangsa</span>
-                        <button
-                          onClick={() => setActiveTab('culture')}
-                          className="w-8 h-8 rounded-full bg-emeraldPrimary text-white flex items-center justify-center hover:bg-emeraldHover transition shadow-sm cursor-pointer"
-                          title="Lihat Pedoman Adat"
-                        >
-                          →
-                        </button>
-                      </div>
+                  {/* Semi-circle Arch Gauge */}
+                  <div className="relative flex flex-col items-center justify-center mt-1">
+                    <svg viewBox="0 0 240 130" className="w-52 sm:w-56 overflow-visible">
+                      <defs>
+                        <linearGradient id="cropDistGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                          <stop offset="0%" stopColor="#84cc16" />
+                          <stop offset="50%" stopColor="#38bdf8" />
+                          <stop offset="85%" stopColor="#f43f5e" />
+                        </linearGradient>
+                      </defs>
+                      {/* Background semi-arc */}
+                      <path d="M 20 120 A 100 100 0 0 1 220 120" fill="none" stroke="#E2E8F0" strokeWidth="10" strokeLinecap="round" />
+                      {/* Colored active arc (70% filled) */}
+                      <path d="M 20 120 A 100 100 0 0 1 220 120" fill="none" stroke="url(#cropDistGrad)" strokeWidth="10" strokeDasharray="314" strokeDashoffset="94" strokeLinecap="round" />
+                    </svg>
+                    {/* Center Text metric */}
+                    <div className="text-center -mt-8">
+                      <span className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold block">Hectares</span>
+                      <span className="text-3xl font-black text-slate-900 tracking-tight font-mono">45.4</span>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* DIGITAL TWIN VIRTUAL SLIDER CONTROLS (WOKWI TESTING CONTROLLER) */}
-              <div className="bg-cardBg p-5 rounded-2xl border border-cardBorder shadow-soft">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-cardBorder gap-2">
-                  <div>
-                    <h3 className="text-sm font-bold text-textTitle flex items-center gap-2">
-                      <span>🎛️</span>
-                      <span>Stimulator Sensor IoT Virtual (Wokwi Testing Controller)</span>
-                    </h3>
-                    <p className="text-xs text-textMuted">
-                      Geser nilai di bawah ini untuk mensimulasikan perubahan data telemetri secara instan tanpa hardware fisik.
-                    </p>
+              {/* Bottom Section: Farm Acres & Yield */}
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-4">
+                {/* Farm Acres Card with Landscape Image */}
+                <div className="sm:col-span-5 glass-card relative overflow-hidden p-4 min-h-[170px] flex flex-col justify-between group">
+                  <img
+                    src="https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=600&q=80"
+                    alt="Aerial Farm Acres"
+                    className="absolute inset-0 w-full h-full object-cover rounded-2xl group-hover:scale-105 transition-transform duration-500"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-black/50" />
+
+                  <div className="relative z-10 flex items-center justify-between text-white">
+                    <span className="text-xs font-semibold flex items-center gap-1.5 bg-white/20 px-2.5 py-1 rounded-full backdrop-blur-md">
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                      </svg>
+                      Farm Acres
+                    </span>
                   </div>
 
-                  <div className="flex gap-1.5 text-xs font-semibold">
-                    <button
-                      onClick={() => applyScenario('safe')}
-                      disabled={isSimulating}
-                      className="px-3 py-1 rounded-lg bg-emeraldLight text-emeraldPrimary hover:bg-emerald-100 transition cursor-pointer"
-                    >
-                      Normal
-                    </button>
-                    <button
-                      onClick={() => applyScenario('warn')}
-                      disabled={isSimulating}
-                      className="px-3 py-1 rounded-lg bg-amber-50 text-statusWarn border border-amber-200 hover:bg-amber-100 transition cursor-pointer"
-                    >
-                      Lembap
-                    </button>
-                    <button
-                      onClick={() => applyScenario('danger')}
-                      disabled={isSimulating}
-                      className="px-3 py-1 rounded-lg bg-rose-50 text-statusDanger border border-rose-200 hover:bg-rose-100 transition cursor-pointer"
-                    >
-                      Bahaya Jamur
-                    </button>
+                  {/* Crosshair center icon mockup */}
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-60">
+                    <svg className="w-12 h-12 text-white/80" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                    </svg>
+                  </div>
+
+                  <div className="relative z-10 text-white mt-auto">
+                    <div className="text-[11px] text-white/70 font-medium">Acres</div>
+                    <div className="text-3xl font-extrabold tracking-tight font-mono">850</div>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 pt-4 text-xs font-medium">
-                  <div>
-                    <div className="flex justify-between mb-1.5">
-                      <span className="text-textMuted">Suhu (°C)</span>
-                      <span className="font-bold font-mono text-emeraldPrimary">
-                        {currentTemp.toFixed(1)} °C
+                {/* Yield Chart Card */}
+                <div className="sm:col-span-7 glass-card p-4 flex flex-col justify-between">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1 text-xs font-bold text-slate-800">
+                      <svg className="w-3.5 h-3.5 text-amber-500" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" />
+                      </svg>
+                      Yield & Output
+                    </div>
+                    <div className="flex items-center gap-3 text-[10px]">
+                      <span className="flex items-center gap-1 text-slate-600 font-medium">
+                        <span className="w-2 h-2 rounded-full bg-[#B5EA3A]" /> Expected
+                      </span>
+                      <span className="flex items-center gap-1 text-slate-600 font-medium">
+                        <span className="w-2 h-2 rounded-full bg-rose-500" /> Actual
                       </span>
                     </div>
-                    <input
-                      type="range"
-                      min="20"
-                      max="42"
-                      step="0.2"
-                      value={currentTemp}
-                      onChange={(e) => handleSliderChange(parseFloat(e.target.value), undefined, undefined)}
-                      className="w-full accent-emeraldPrimary cursor-pointer"
-                    />
                   </div>
 
-                  <div>
-                    <div className="flex justify-between mb-1.5">
-                      <span className="text-textMuted">Kelembapan Nisbi / RH (%)</span>
-                      <span className="font-bold font-mono text-emeraldPrimary">
-                        {Math.round(currentHum)} %
-                      </span>
+                  {/* Yield headline value */}
+                  <div className="text-center my-1">
+                    <div className="text-2xl font-black text-slate-900 leading-none font-mono">
+                      {(stokKg / 10).toFixed(0)}
                     </div>
-                    <input
-                      type="range"
-                      min="40"
-                      max="95"
-                      step="1"
-                      value={currentHum}
-                      onChange={(e) => handleSliderChange(undefined, parseFloat(e.target.value), undefined)}
-                      className="w-full accent-emeraldPrimary cursor-pointer"
-                    />
+                    <div className="text-[10px] text-slate-400 font-medium uppercase mt-0.5">Tones</div>
                   </div>
 
-                  <div>
-                    <div className="flex justify-between mb-1.5">
-                      <span className="text-textMuted">Gas Busuk / Fermentasi (PPM)</span>
-                      <span className="font-bold font-mono text-emeraldPrimary">
-                        {Math.round(currentGas)} ppm
-                      </span>
+                  {/* Bar chart visualization */}
+                  <div className="h-28 w-full flex items-end justify-between px-2 pt-2 border-b border-slate-200">
+                    {/* Yield 1 */}
+                    <div className="flex flex-col items-center gap-1 group">
+                      <div className="flex items-end gap-1 h-20">
+                        <div className="w-2 bg-[#B5EA3A] rounded-t-full transition-all group-hover:brightness-110" style={{height:'3rem'}} title="Expected: 420" />
+                        <div className="w-2 bg-rose-500 rounded-t-full transition-all group-hover:brightness-110" style={{height:'3.5rem'}} title="Actual: 470" />
+                      </div>
+                      <span className="text-[9px] text-slate-500 font-semibold">Yield 1</span>
                     </div>
-                    <input
-                      type="range"
-                      min="5"
-                      max="150"
-                      step="1"
-                      value={currentGas}
-                      onChange={(e) => handleSliderChange(undefined, undefined, parseFloat(e.target.value))}
-                      className="w-full accent-emeraldPrimary cursor-pointer"
-                    />
+
+                    {/* Yield 2 */}
+                    <div className="flex flex-col items-center gap-1 group">
+                      <div className="flex items-end gap-1 h-20">
+                        <div className="w-2 bg-[#B5EA3A] rounded-t-full transition-all group-hover:brightness-110" style={{height:'3.5rem'}} />
+                        <div className="w-2 bg-rose-500 rounded-t-full transition-all group-hover:brightness-110" style={{height:'3rem'}} />
+                      </div>
+                      <span className="text-[9px] text-slate-500 font-semibold">Yield 2</span>
+                    </div>
+
+                    {/* Yield 3 (Highlighted Peak) */}
+                    <div className="flex flex-col items-center gap-1 group relative">
+                      <div className="absolute -top-3 w-2 h-2 bg-red-500 rounded-full animate-ping" />
+                      <div className="flex items-end gap-1 h-20">
+                        <div className="w-2 bg-[#B5EA3A] rounded-t-full transition-all group-hover:brightness-110" style={{height:'4rem'}} />
+                        <div className="w-2 bg-rose-500 rounded-t-full transition-all group-hover:brightness-110 shadow-sm" style={{height:'4.5rem'}} />
+                      </div>
+                      <span className="text-[9px] text-slate-900 font-bold">Yield 3</span>
+                    </div>
+
+                    {/* Yield 4 */}
+                    <div className="flex flex-col items-center gap-1 group">
+                      <div className="flex items-end gap-1 h-20">
+                        <div className="w-2 bg-[#B5EA3A] rounded-t-full transition-all group-hover:brightness-110" style={{height:'3.75rem'}} />
+                        <div className="w-2 bg-rose-500 rounded-t-full transition-all group-hover:brightness-110" style={{height:'3.5rem'}} />
+                      </div>
+                      <span className="text-[9px] text-slate-500 font-semibold">Yield 4</span>
+                    </div>
+
+                    {/* Yield 5 */}
+                    <div className="flex flex-col items-center gap-1 group">
+                      <div className="flex items-end gap-1 h-20">
+                        <div className="w-2 bg-[#B5EA3A] rounded-t-full transition-all group-hover:brightness-110" style={{height:'2.75rem'}} />
+                        <div className="w-2 bg-rose-500 rounded-t-full transition-all group-hover:brightness-110" style={{height:'3.75rem'}} />
+                      </div>
+                      <span className="text-[9px] text-slate-500 font-semibold">Yield 5</span>
+                    </div>
                   </div>
                 </div>
               </div>
-            </>
-          )}
 
-          {/* VIEW: SENSOR IOT (GRAFIK DETAIL & TELEMETRI) */}
-          {activeTab === 'sensor' && (
-            <div className="space-y-6">
-              <TrendsChart
-                telemetryHistory={telemetryHistory}
-                onRangeChange={setTimeRange}
-                currentRange={timeRange}
+            </div>
+
+            {/* ================= RIGHT SATELLITE FIELD MONITORING AND NDVI ZONE ================= */}
+            <div className="xl:col-span-6 relative rounded-[2rem] overflow-hidden min-h-[440px] xl:min-h-full border border-white/60 shadow-xl group">
+
+              {/* Satellite Base Map Image */}
+              <img
+                src="https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=1600&q=85"
+                alt="Satellite Aerial Farmland"
+                className="absolute inset-0 w-full h-full object-cover scale-105 group-hover:scale-100 transition-transform duration-700 ease-out"
               />
-            </div>
-          )}
 
-          {/* VIEW: KEARIFAN BUDAYA & NOTIFIKASI ADAT */}
-          {activeTab === 'culture' && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <AlertsList alerts={alerts} />
-              <TraditionReminders profileData={localeData?.profiles?.[cultureProfile]} />
-            </div>
-          )}
+              {/* Secondary Aerial Tint for agriculture feel */}
+              <div className="absolute inset-0 bg-emerald-950/20 mix-blend-multiply pointer-events-none" />
 
-          {/* VIEW: KALKULASI FINANSIAL & EKONOMI KOMODITAS */}
-          {activeTab === 'finance' && (
-            <div className="space-y-6">
-              <EconomicsPanel
-                economics={economics}
-                siloInfo={selectedSilo}
-              />
-            </div>
-          )}
-        </main>
+              {/* SVG Multispectral NDVI Polygon Overlay */}
+              <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 800 700" preserveAspectRatio="none">
+                <defs>
+                  <linearGradient id="ndviGradient" x1="20%" y1="90%" x2="80%" y2="20%">
+                    <stop offset="0%" stopColor="#15803d" stopOpacity="0.92" />
+                    <stop offset="35%" stopColor="#22c55e" stopOpacity="0.9" />
+                    <stop offset="55%" stopColor="#eab308" stopOpacity="0.88" />
+                    <stop offset="75%" stopColor="#f97316" stopOpacity="0.92" />
+                    <stop offset="100%" stopColor="#ef4444" stopOpacity="0.96" />
+                  </linearGradient>
 
-        {/* FOOTER */}
-        <footer className="border-t border-cardBorder py-6 px-6 text-center text-xs text-textMuted">
-          <p>
-            SiloGuard © 2026 — Smart Silo & Grain Management Dashboard Berbasis Digital Twin IoT & Kearifan Lokal Nusantara.
-          </p>
-        </footer>
-      </div>
+                  <filter id="softGlow" x="-20%" y="-20%" width="140%" height="140%">
+                    <feGaussianBlur stdDeviation="6" result="blur" />
+                    <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                  </filter>
+                </defs>
+
+                {/* Precision Selected Parcel Zone with multispectral colors */}
+                <polygon
+                  points="230,550 490,440 680,240 540,160 450,290 310,380"
+                  fill="url(#ndviGradient)"
+                  stroke="#FFFFFF"
+                  strokeWidth="3.5"
+                  strokeDasharray="6,4"
+                  className="ndvi-polygon"
+                  filter="url(#softGlow)"
+                />
+
+                {/* Internal Contour / Irrigation Ditch line */}
+                <polyline
+                  points="330,480 370,440 370,410 400,390 420,340 440,320 480,290"
+                  fill="none"
+                  stroke="rgba(255,255,255,0.75)"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+
+              {/* Top Right Fullscreen Icon */}
+              <button
+                onClick={() => showToast('NDVI Multispectral: Zoom 100%')}
+                className="absolute top-4 right-4 w-9 h-9 rounded-xl bg-black/40 hover:bg-black/60 text-white backdrop-blur-md flex items-center justify-center transition border border-white/20 cursor-pointer"
+                title="Fullscreen Map"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                </svg>
+              </button>
+
+              {/* Floating Moisture / Water Card */}
+              <div className="absolute top-6 right-6 glass-card-dark p-4 w-60 shadow-2xl text-white">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-white/90">
+                    <svg className="w-4 h-4 text-cyan-400 fill-current" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 2a.75.75 0 01.75.75v.25c0 3.2 2.6 6 5.8 6a.75.75 0 010 1.5 7.5 7.5 0 01-13.1 0 .75.75 0 010-1.5c3.2 0 5.8-2.8 5.8-6v-.25A.75.75 0 0110 2z" clipRule="evenodd" />
+                    </svg>
+                    Water & RH
+                  </div>
+                  <span className={`w-2 h-2 rounded-full ${evaluatedStatus.level === 'danger' ? 'bg-rose-500 animate-pulse' : 'bg-cyan-400'}`} />
+                </div>
+
+                <p className="text-[11px] text-white/60 font-medium mt-0.5">
+                  {evaluatedStatus.label}
+                </p>
+
+                {/* Water Sparkline Graph & Level Indicator */}
+                <div className="flex items-center justify-between my-3">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-3 bg-lime-400 rounded-sm" />
+                    <span className="w-1.5 h-4 bg-lime-400 rounded-sm" />
+                    <span className="w-1.5 h-2 bg-emerald-400 rounded-sm" />
+                    <span className="w-1.5 h-3 bg-yellow-400 rounded-sm" />
+                    <span className={`w-1.5 h-5 rounded-sm ${evaluatedStatus.level === 'danger' ? 'bg-rose-500' : 'bg-cyan-400'}`} />
+                  </div>
+
+                  {/* Big Percent Value */}
+                  <div className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-cyan-400" />
+                    <span className="text-xl sm:text-2xl font-black tracking-tight text-white font-mono">
+                      {currentHum.toFixed(1)}%
+                    </span>
+                  </div>
+                </div>
+
+                {/* Interactive Action Buttons */}
+                <div className="grid grid-cols-2 gap-2 mt-3 text-xs font-bold">
+                  <button
+                    onClick={handleToggleFan}
+                    className="py-2 px-3 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white shadow-md flex items-center justify-center gap-1 transition active:scale-95 cursor-pointer"
+                  >
+                    <span>{fanOn ? '⏹' : '+'}</span> {fanOn ? 'Blower ON' : 'Watering'}
+                  </button>
+                  <button
+                    onClick={() => showToast('⏰ Moisture alert snoozed for 60 minutes')}
+                    className="py-2 px-3 rounded-xl bg-white/10 hover:bg-white/20 text-white/90 border border-white/10 flex items-center justify-center gap-1 transition active:scale-95 cursor-pointer"
+                  >
+                    <span>✕</span> Snooze
+                  </button>
+                </div>
+              </div>
+
+              {/* Left Vertical Map Tools (+ / - zoom & filters) */}
+              <div className="absolute bottom-6 left-6 flex flex-col gap-2">
+                <div className="flex flex-col bg-white/80 backdrop-blur-md rounded-2xl p-1 shadow-lg border border-white/60">
+                  <button
+                    onClick={() => showToast('Map Zoom In')}
+                    className="w-9 h-9 flex items-center justify-center hover:bg-slate-200/80 rounded-xl text-slate-800 font-bold transition text-lg cursor-pointer"
+                  >
+                    +
+                  </button>
+                  <div className="w-full h-px bg-slate-200" />
+                  <button
+                    onClick={() => showToast('Map Zoom Out')}
+                    className="w-9 h-9 flex items-center justify-center hover:bg-slate-200/80 rounded-xl text-slate-800 font-bold transition text-lg cursor-pointer"
+                  >
+                    −
+                  </button>
+                </div>
+
+                {/* Secondary Layer / Thermal toggle */}
+                <button
+                  onClick={() => showToast('Layer: Multispectral NDVI Thermal Active')}
+                  className="w-11 h-11 bg-white/80 hover:bg-white backdrop-blur-md rounded-2xl flex items-center justify-center text-slate-700 shadow-lg border border-white/60 transition cursor-pointer"
+                  title="Layer settings"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Bottom Right Mini-Map Inset */}
+              <div className="absolute bottom-6 right-6 w-24 h-24 rounded-2xl overflow-hidden border-2 border-white/80 shadow-2xl backdrop-blur-md">
+                <img
+                  src="https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=300&q=70"
+                  className="w-full h-full object-cover"
+                  alt="Mini map viewport"
+                />
+                <div className="absolute inset-0 m-auto w-10 h-10 border-2 border-white/90 rounded-lg bg-white/10 backdrop-brightness-125" />
+              </div>
+
+            </div>
+
+          </div>
+        )}
+
+        {/* VIEW: SENSOR IOT DETAIL */}
+        {activeView === 'sensor' && (
+          <div className="space-y-4">
+            <TrendsChart
+              telemetryHistory={telemetryHistory}
+              onRangeChange={setTimeRange}
+              currentRange={timeRange}
+            />
+          </div>
+        )}
+
+        {/* VIEW: CULTURAL REMINDERS & ALERTS */}
+        {activeView === 'culture' && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <AlertsList alerts={alerts} />
+            <TraditionReminders profileData={localeData?.profiles?.[cultureProfile]} />
+          </div>
+        )}
+
+        {/* VIEW: FINANCIAL ECONOMICS */}
+        {activeView === 'finance' && (
+          <div className="space-y-4">
+            <EconomicsPanel
+              economics={economics}
+              siloInfo={selectedSilo}
+            />
+          </div>
+        )}
+
+      </main>
     </div>
   );
 }

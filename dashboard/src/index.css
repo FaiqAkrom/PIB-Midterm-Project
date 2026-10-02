@@ -4,11 +4,51 @@
 
 @layer base {
   body {
-    @apply bg-appBg text-textTitle font-sans antialiased min-h-screen selection:bg-emeraldPrimary selection:text-white;
+    background-color: #D6DCDE;
+    color: #1F2937;
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
   }
 }
 
-/* Fan rotation for ventilation */
+/* Glassmorphism subtle card styling */
+.glass-card {
+  background: rgba(238, 242, 243, 0.82);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  border-radius: 1.5rem;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.04), 0 4px 10px -3px rgba(0, 0, 0, 0.02);
+}
+
+.glass-card-dark {
+  background: rgba(22, 32, 26, 0.78);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 1.25rem;
+}
+
+/* Custom scrollbar for neatness */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 999px;
+}
+
+/* Thermal gradient overlay polygon for NDVI map */
+.ndvi-polygon {
+  filter: drop-shadow(0 0 12px rgba(239, 68, 68, 0.4));
+}
+
+/* Fan rotation */
 @keyframes spin-fan {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
@@ -16,17 +56,4 @@
 .fan-running {
   animation: spin-fan 0.8s linear infinite;
   transform-origin: center;
-}
-
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-thumb {
-  background: #CBDAD2;
-  border-radius: 999px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #a4bab0;
 }

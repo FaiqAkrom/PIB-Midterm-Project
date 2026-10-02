@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "author": "Silo-Guard Team",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "wokwi-esp32-devkit-v1",
+      "id": "esp",
+      "top": 0,
+      "left": 0,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-dht22",
+      "id": "dht",
+      "top": -120,
+      "left": 180,
+      "attrs": { "temperature": "27.5", "humidity": "68" }
+    },
+    {
+      "type": "wokwi-potentiometer",
+      "id": "pot_gas",
+      "top": 120,
+      "left": 200,
+      "attrs": { "label": "Simulasi Gas MQ-2 (ppm)", "value": "280" }
+    },
+    {
+      "type": "wokwi-relay-module",
+      "id": "relay_fan",
+      "top": -120,
+      "left": -160,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led_fan",
+      "top": 100,
+      "left": -120,
+      "attrs": { "color": "cyan", "label": "Kipas Ventilasi" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r1",
+      "top": 160,
+      "left": -120,
+      "attrs": { "value": "220" }
+    }
+  ],
+  "connections": [
+    [ "esp:TX", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX", "$serialMonitor:TX", "", [] ],
+    
+    [ "esp:GND.1", "dht:GND", "black", [ "v0" ] ],
+    [ "esp:3V3", "dht:VCC", "red", [ "v0" ] ],
+    [ "esp:15", "dht:SDA", "green", [ "v0" ] ],
+
+    [ "esp:GND.2", "pot_gas:GND", "black", [ "v0" ] ],
+    [ "esp:3V3", "pot_gas:VCC", "red", [ "v0" ] ],
+    [ "esp:34", "pot_gas:SIG", "orange", [ "v0" ] ],
+
+    [ "esp:GND.1", "relay_fan:GND", "black", [ "v0" ] ],
+    [ "esp:3V3", "relay_fan:VCC", "red", [ "v0" ] ],
+    [ "esp:4", "relay_fan:IN", "blue", [ "v0" ] ],
+
+    [ "esp:2", "led_fan:A", "cyan", [ "v0" ] ],
+    [ "led_fan:C", "r1:1", "black", [ "v0" ] ],
+    [ "r1:2", "esp:GND.2", "black", [ "v0" ] ]
+  ]
+}

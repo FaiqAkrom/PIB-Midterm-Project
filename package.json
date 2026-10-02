@@ -1,0 +1,19 @@
+{
+  "name": "silo-guard-monorepo",
+  "version": "1.0.0",
+  "description": "Sistem Manajemen Lumbung Pascapanen Cerdas Berbasis Digital Twin IoT & Kearifan Lokal",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev:backend": "cd backend && npm run dev",
+    "start:backend": "cd backend && npm start",
+    "dev:dashboard": "cd dashboard && npm run dev",
+    "build:dashboard": "cd dashboard && npm run build",
+    "test:backend": "cd backend && npm test",
+    "simulate": "node scripts/simulate.js",
+    "simulate:http": "node scripts/simulate.js --http"
+  },
+  "dependencies": {
+    "mqtt": "^5.16.0"
+  }
+}

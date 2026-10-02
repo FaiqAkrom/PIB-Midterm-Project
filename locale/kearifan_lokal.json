@@ -1,0 +1,129 @@
+{
+  "_meta": {
+    "version": "1.0.0",
+    "description": "Kamus istilah tata kelola lumbung pascapanen adat Nusantara untuk Silo-Guard",
+    "notice": "Semua istilah adat berstatus DRAFT/PLACEHOLDER dan WAJIB divalidasi oleh pemangku adat, kasepuhan, tetua desa, atau Penyuluh Pertanian Lapangan (PPL) setempat sebelum digunakan dalam penerapan nyata."
+  },
+  "profiles": {
+    "sunda": {
+      "id": "sunda",
+      "name": "Kearifan Pasundan / Kasepuhan (Sunda)",
+      "disclaimer": "Istilah disarikan dari tradisi Leuit Adat Kasepuhan. Wajib divalidasi bersama Tokoh Adat / Rukun Tani setempat.",
+      "granary_term": "Leuit",
+      "commodity_term": "Pare (Padi)",
+      "fan_term": "Kipas Angin-angin",
+      "levels": {
+        "aman": {
+          "label": "Tengtrem / Rahayu",
+          "color": "#10b981",
+          "description": "Hawa leuit seger, gabah garing sampurna, teu aya tanda haseum atawa beueus."
+        },
+        "waspada": {
+          "label": "Kudu Taliti (Waspada)",
+          "color": "#f59e0b",
+          "description": "Aya tanda-tanda hawa beueus atawa haneut kaleuleuwihi. Kudu siap mariksa leuit."
+        },
+        "bahaya": {
+          "label": "Gelar Bahaya (Kritis)",
+          "color": "#ef4444",
+          "description": "Hawa pengap jeung beueus pisan, pare kakeueum hawa buruk. Kudu gancang disalametkeun!"
+        }
+      },
+      "alerts": {
+        "humidity_warning": "Pare mimiti beueus, buka angin-angin leuit sangkan hawa ngalir lancar.",
+        "humidity_danger": "Uap beueus luhur pisan di leuit! Kipas ventilasi hurung, buru pariksa tumpukan pare bisi kapang.",
+        "gas_warning": "Kaciri aya hawa haseum tina pare, geura pariksa tumpukan handap leuit.",
+        "gas_danger": "Bau apek jeung gas pembusukan pekat! Kipas digolontorkeun pinuh, buru bongkar tumpukan pare!",
+        "temp_warning": "Hawa leuit panas teuing, sirkulasi hawa kudu ditingkatkeun.",
+        "combined_danger": "Bahaya rangkep! Hawa panas jeung beueus narik jamur. Kipas aktip, geura taratas leuit ayeuna!",
+        "rapid_trend": "Hawa robah gancang dina 5 menit! Pare ngaluarkeun haseup/gas beueus teu lumrah.",
+        "resolved": "Alhamdulillah, hawa leuit geus balik deui tengtrem jeung seger. Kipas dipareuman."
+      },
+      "cultural_reminders": [
+        "Jadwal Nilik Leuit: Pariksa saban poe Senen jeung Kemis isuk-isuk saencan panonpoe mentrang.",
+        "Pangaturan Gabah: Pare bibit (binih) wajib disimpen di undakan luhur, pare dahareun kulawarga di handap.",
+        "Pangeling Kolot: Ulah asup ka leuit mun awak baseuh kesang atawa tas kahujanan bisi nimbulkeun haseum."
+      ]
+    },
+    "jawa": {
+      "id": "jawa",
+      "name": "Kearifan Kejawen / Agraris (Jawa)",
+      "disclaimer": "Istilah disarikan saking tradisi Gedhong Pantun / Lumbung Desa. Kedah dipun-salarasaken kaliyan Sesepuh Tani / PPL setempat.",
+      "granary_term": "Lumbung",
+      "commodity_term": "Pantun / Gabah",
+      "fan_term": "Kipas Hawa Lumbung",
+      "levels": {
+        "aman": {
+          "label": "Rahayu / Ayem",
+          "color": "#10b981",
+          "description": "Hawa lumbung seger garing, gabah aman saking jamur lan rengat."
+        },
+        "waspada": {
+          "label": "Prayitna (Waspada)",
+          "color": "#f59e0b",
+          "description": "Hawane wiwit anyep lembap utawa sumuk. Prayogi dipun titeni kanthi premati."
+        },
+        "bahaya": {
+          "label": "Bebaya (Bahaya)",
+          "color": "#ef4444",
+          "description": "Hawa bosok sumebar, gabah kaancam bosok amarga lembap dhuwur."
+        }
+      },
+      "alerts": {
+        "humidity_warning": "Gabah wiwit nemplek lembap, bukak cendhela hawa lumbung ben semribit.",
+        "humidity_danger": "Kelembapan dhuwur banget! Kipas hawa urip otomatis, enggal priksa tumpukan gabah.",
+        "gas_warning": "Ambune wiwit apek sumuk, surokna hawa lumbung kudu diresiki.",
+        "gas_danger": "Ambu bosok sansoyo cetha! Kipas mubeng banter, tumpukan gabah kudu disuntak lan diisisi!",
+        "temp_warning": "Hawane lumbung sumuk banter, prayitna tumpukan gabah dadi panas.",
+        "combined_danger": "Bebaya rangkep! Hawane panas lan lembap nggugah jamur. Kipas urip, enggal tindakake sirkulasi!",
+        "rapid_trend": "Gas lumbung munggah cepet sajeroning 5 menit! Ana tandha-tandha bosok jero tumpukan.",
+        "resolved": "Kahanan lumbung sampun rahayu malih. Kipas hawa dipateni kanthi otomatis."
+      },
+      "cultural_reminders": [
+        "Pambudidaya Lumbung: Priksa kahanan gabah saban dina pasaran Pon utawa Kliwon.",
+        "Tata Dunung Gabah: Gabah winih dipapanake ing papan inggil supados boten kambah anyep lemah.",
+        "Wewaler Luhur: Aja nyimpen gabah kang isih mentes teles amarga bisa gawe lara sabrayat lumbung."
+      ]
+    },
+    "indonesia_desa": {
+      "id": "indonesia_desa",
+      "name": "Bahasa Petani Lugas (Indonesia Desa)",
+      "disclaimer": "Bahasa Indonesia praktis yang dirancang sederhana untuk petani tanpa istilah teknis rumit.",
+      "granary_term": "Lumbung Pangan",
+      "commodity_term": "Gabah Padi",
+      "fan_term": "Kipas Ventilasi",
+      "levels": {
+        "aman": {
+          "label": "Aman & Kering",
+          "color": "#10b981",
+          "description": "Udara lumbung bersih dan kering sejuk, gabah tersimpan dengan baik."
+        },
+        "waspada": {
+          "label": "Perlu Waspada",
+          "color": "#f59e0b",
+          "description": "Udara mulai agak lembap atau hangat. Perlu perhatian agar tidak memburuk."
+        },
+        "bahaya": {
+          "label": "Bahaya Pembusukan",
+          "color": "#ef4444",
+          "description": "Kondisi sangat lembap dan gas pembusukan tinggi! Segera lakukan penanganan."
+        }
+      },
+      "alerts": {
+        "humidity_warning": "Gabah mulai lembap, segera buka ventilasi agar udara mengalir lancar.",
+        "humidity_danger": "Kelembapan udara sangat tinggi! Kipas otomatis menyala, periksa tumpukan dari jamur.",
+        "gas_warning": "Tercium aroma apek samar dari tumpukan, periksa sirkulasi udara lantai bawah.",
+        "gas_danger": "Bau busuk/gas fermentasi terdeteksi pekat! Kipas bekerja penuh, segera balik tumpukan gabah!",
+        "temp_warning": "Suhu lumbung meningkat di atas batas wajar, waspada respirasi gabah memanas.",
+        "combined_danger": "Bahaya ganda! Suhu panas dan sangat lembap memicu jamur busuk. Periksa lumbung sekarang!",
+        "rapid_trend": "Peningkatan gas/kelembapan cepat dalam 5 menit terakhir! Indikasi pembusukan aktif di dalam tumpukan.",
+        "resolved": "Alhamdulillah, kondisi lumbung sudah kembali sejuk dan aman. Kipas dimatikan otomatis."
+      },
+      "cultural_reminders": [
+        "Jadwal Kontrol Pagi: Lakukan pemeriksaan fisik tumpukan setiap pagi sebelum matahari terik.",
+        "Pemisahan Stok: Pisahkan gabah benih di rak atas dan gabah konsumsi harian di bagian bawah.",
+        "Kebersihan Kolong: Bersihkan kolong lumbung dari sisa gabah basah agar tidak mengundang tikus dan kutu beras."
+      ]
+    }
+  }
+}

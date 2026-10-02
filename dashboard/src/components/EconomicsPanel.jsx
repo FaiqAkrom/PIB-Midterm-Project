@@ -22,28 +22,28 @@ export default function EconomicsPanel({ economics = {}, siloInfo = {} }) {
   };
 
   return (
-    <div className="glass-panel rounded-2xl p-5 sm:p-6 border border-slate-800">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-slate-800/80">
+    <div className="bg-cardBg rounded-2xl p-5 sm:p-6 border border-cardBorder shadow-soft">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-cardBorder">
         <div>
           <div className="flex items-center gap-2">
-            <h3 className="text-lg font-bold text-white flex items-center gap-2">
-              <DollarSign className="w-5 h-5 text-amber-400" />
-              <span>Analisis Risiko Ekonomi Komoditas</span>
-            </h3>
-            <span className="text-[10px] uppercase font-extrabold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+            <div className="w-8 h-8 rounded-lg bg-emeraldLight text-emeraldPrimary flex items-center justify-center font-bold">
+              <DollarSign className="w-4 h-4" />
+            </div>
+            <h3 className="text-base font-bold text-textTitle">Analisis Risiko Ekonomi Komoditas</h3>
+            <span className="text-[10px] uppercase font-extrabold px-2 py-0.5 rounded-full bg-emeraldLight text-emeraldPrimary border border-emerald-200">
               Estimasi Simulasi
             </span>
           </div>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Komoditas: <strong className="text-slate-200">{siloInfo.komoditas || 'Padi Ciherang'}</strong> | Total Stok:{' '}
-            <strong className="text-slate-200">{stokKg.toLocaleString('id-ID')} kg</strong> | Acuan GKP:{' '}
-            <strong className="text-slate-200">{formatRp(hargaPerKg)}/kg</strong>
+          <p className="text-xs text-textMuted mt-1">
+            Komoditas: <strong className="text-textTitle">{siloInfo.komoditas || 'Padi Ciherang'}</strong> | Total Stok:{' '}
+            <strong className="text-textTitle">{stokKg.toLocaleString('id-ID')} kg</strong> | Acuan GKP:{' '}
+            <strong className="text-textTitle">{formatRp(hargaPerKg)}/kg</strong>
           </p>
         </div>
 
         <button
           onClick={() => setShowFormula(!showFormula)}
-          className="text-xs text-slate-400 hover:text-amber-400 flex items-center gap-1 self-start sm:self-auto py-1 px-2 rounded-lg bg-slate-800/60 border border-slate-700 transition cursor-pointer"
+          className="text-xs text-textMuted hover:text-emeraldPrimary flex items-center gap-1 self-start sm:self-auto py-1 px-2.5 rounded-lg bg-appBg border border-cardBorder transition cursor-pointer"
         >
           <HelpCircle className="w-3.5 h-3.5" />
           <span>{showFormula ? 'Tutup Rumus' : 'Lihat Rumus Matematis'}</span>
@@ -53,121 +53,104 @@ export default function EconomicsPanel({ economics = {}, siloInfo = {} }) {
 
       {/* Rincian Rumus Transparan (Collapsible) */}
       {showFormula && (
-        <div className="my-4 p-4 rounded-xl bg-slate-900/90 border border-amber-500/30 text-xs text-slate-300 space-y-2">
-          <p className="font-semibold text-amber-400">Model Matematis Susut Pascapanen (Empirical Degradation Model):</p>
-          <ul className="list-disc list-inside space-y-1 text-slate-300">
+        <div className="my-4 p-4 rounded-xl bg-appBg border border-cardBorder text-xs text-textMuted space-y-2">
+          <p className="font-semibold text-emeraldPrimary">Model Matematis Susut Pascapanen (Empirical Degradation Model):</p>
+          <ul className="list-disc list-inside space-y-1 text-textMuted">
             <li>
               <strong>Laju Susut Dasar:</strong> 0.002%/jam (Aman), 0.04%/jam (Waspada), 0.20%/jam (Bahaya).
             </li>
             <li>
-              <strong>Faktor Keparahan:</strong> Dipercepat non-linier oleh skor risiko: <code>(Risk / 100)^1.5 × 2.5</code>.
+              <strong>Faktor Pengali Gas (Ammonia/Fermentasi):</strong> 1 + (Gas &gt; 35 ppm ? ((Gas - 35)/50) : 0).
             </li>
             <li>
-              <strong>Intervensi Kipas:</strong> Menekan laju kerusakan hingga <strong>70%</strong> saat kipas sirkulasi aktif.
+              <strong>Estimasi Kerugian:</strong> Susut Bobot (kg) × Harga Komoditas per kg.
             </li>
             <li>
-              <strong>Susut Kg & Nilai Rupiah:</strong> <code>Stok × Susut%</code> dan <code>Susut Kg × Harga/kg</code>.
+              <strong>Nilai Tercegah:</strong> Menghitung delta kerugian yang dihemat saat kipas sirkulasi aktif menstabilkan mikroklimat lumbung.
             </li>
           </ul>
-          <p className="text-[11px] text-slate-400 italic">
-            *Catatan: Model ini dirancang sebagai peringatan dini risiko susut, bukan timbangan analitik laboratorium.
-          </p>
         </div>
       )}
 
-      {/* Grid Kartu Ekonomi */}
+      {/* 4 Kolom Metrik Ekonomi */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-5">
-        {/* 1. Risk Score Gauge */}
-        <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-xs text-slate-400">
-            <span className="font-semibold">Skor Kerentanan Gabah</span>
-            <ShieldAlert className="w-4 h-4 text-amber-400" />
+        {/* 1. Skor Risiko Gabah */}
+        <div className="p-4 rounded-xl bg-appBg border border-cardBorder flex flex-col justify-between">
+          <div className="flex items-center justify-between text-xs text-textMuted">
+            <span>Skor Risiko Kerusakan</span>
+            <ShieldAlert className="w-4 h-4 text-statusWarn" />
           </div>
-          <div className="my-2">
-            <div className="flex items-baseline gap-1">
-              <span className={`text-3xl font-black ${
-                riskScore > 60 ? 'text-red-400' : riskScore > 30 ? 'text-amber-400' : 'text-emerald-400'
-              }`}>
-                {riskScore}
-              </span>
-              <span className="text-xs text-slate-400 font-bold">/ 100</span>
-            </div>
-            <p className="text-xs text-slate-400 mt-1">
-              {riskScore > 60 ? 'Tinggi: Terjadi pembusukan aktif' : riskScore > 30 ? 'Sedang: Mulai timbul uap lembap' : 'Rendah: Gabah stabil sejuk'}
-            </p>
+          <div className="my-3">
+            <span
+              className={`text-2xl font-bold font-mono ${
+                riskScore > 50
+                  ? 'text-statusDanger'
+                  : riskScore > 20
+                  ? 'text-statusWarn'
+                  : 'text-statusGreen'
+              }`}
+            >
+              {riskScore.toFixed(0)}
+              <span className="text-sm font-normal text-textMuted"> / 100</span>
+            </span>
           </div>
-          <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+          <div className="w-full bg-cardBorder h-1.5 rounded-full overflow-hidden">
             <div
               className={`h-full transition-all duration-500 ${
-                riskScore > 60 ? 'bg-red-500' : riskScore > 30 ? 'bg-amber-500' : 'bg-emerald-500'
+                riskScore > 50 ? 'bg-statusDanger' : riskScore > 20 ? 'bg-statusWarn' : 'bg-statusGreen'
               }`}
-              style={{ width: `${riskScore}%` }}
+              style={{ width: `${Math.min(riskScore, 100)}%` }}
             />
           </div>
         </div>
 
-        {/* 2. Estimasi Susut Bobot */}
-        <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-xs text-slate-400">
-            <span className="font-semibold">Estimasi Susut Bobot</span>
-            <TrendingDown className="w-4 h-4 text-rose-400" />
+        {/* 2. Estimasi Susut Bobot (%) */}
+        <div className="p-4 rounded-xl bg-appBg border border-cardBorder flex flex-col justify-between">
+          <div className="flex items-center justify-between text-xs text-textMuted">
+            <span>Estimasi Susut Bobot</span>
+            <TrendingDown className="w-4 h-4 text-accentOrange" />
           </div>
-          <div className="my-2">
-            <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-black text-rose-400">
-                {susutPersen.toFixed(2)}%
-              </span>
-              <span className="text-sm font-bold text-slate-300">
-                ({susutKg.toFixed(1)} kg)
-              </span>
-            </div>
-            <p className="text-xs text-slate-400 mt-1">
-              Dari total stok {stokKg.toLocaleString('id-ID')} kg gabah
-            </p>
-          </div>
-          <div className="text-[11px] text-slate-500">
-            Respirasi & uap air berlebih
-          </div>
-        </div>
-
-        {/* 3. Estimasi Kerugian Finansial */}
-        <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-xs text-slate-400">
-            <span className="font-semibold">Potensi Kerugian Berjalan</span>
-            <DollarSign className="w-4 h-4 text-red-400" />
-          </div>
-          <div className="my-2">
-            <div className="text-2xl sm:text-3xl font-black text-red-400">
-              {formatRp(kerugianRp)}
-            </div>
-            <p className="text-xs text-slate-400 mt-1">
-              Jika kondisi saat ini tidak ditangani
-            </p>
-          </div>
-          <div className="text-[11px] text-slate-500">
-            Dihitung dari harga gabah setempat
-          </div>
-        </div>
-
-        {/* 4. Kerugian Berhasil Dicegah (Intervensi Kipas) */}
-        <div className="p-4 rounded-xl bg-gradient-to-br from-emerald-950/40 to-slate-900/80 border border-emerald-500/40 flex flex-col justify-between shadow-lg shadow-emerald-500/5">
-          <div className="flex items-center justify-between text-xs text-emerald-400">
-            <span className="font-bold flex items-center gap-1">
-              <Sparkles className="w-4 h-4 text-emerald-400" />
-              Kerugian Berhasil Dicegah
+          <div className="my-3">
+            <span className="text-2xl font-bold text-textTitle font-mono">
+              {susutPersen.toFixed(2)}
+              <span className="text-sm font-normal text-textMuted"> %</span>
             </span>
           </div>
-          <div className="my-2">
-            <div className="text-2xl sm:text-3xl font-black text-emerald-400">
+          <p className="text-[11px] text-textMuted font-mono">
+            Setara: <strong className="text-textTitle">{susutKg.toFixed(1)} kg</strong> gabah
+          </p>
+        </div>
+
+        {/* 3. Estimasi Kerugian Finansial (Rp) */}
+        <div className="p-4 rounded-xl bg-rose-50/70 border border-rose-200 flex flex-col justify-between">
+          <div className="flex items-center justify-between text-xs text-statusDanger">
+            <span>Potensi Kerugian Berjalan</span>
+            <DollarSign className="w-4 h-4" />
+          </div>
+          <div className="my-3">
+            <span className="text-xl font-bold text-statusDanger font-mono">
+              {formatRp(kerugianRp)}
+            </span>
+          </div>
+          <p className="text-[11px] text-rose-700">
+            {kerugianRp > 100000 ? 'Kerugian perlu mitigasi cepat!' : 'Dalam toleransi alami'}
+          </p>
+        </div>
+
+        {/* 4. Nilai Finansial Yang Berhasil Dicegah (Rp) */}
+        <div className="p-4 rounded-xl bg-emeraldLight/70 border border-emerald-200 flex flex-col justify-between">
+          <div className="flex items-center justify-between text-xs text-statusGreen">
+            <span>Nilai Berhasil Dicegah</span>
+            <Sparkles className="w-4 h-4" />
+          </div>
+          <div className="my-3">
+            <span className="text-xl font-bold text-statusGreen font-mono">
               {formatRp(dicegahRp)}
-            </div>
-            <p className="text-xs text-emerald-300/80 mt-1">
-              Diselamatkan oleh ventilasi otomatis
-            </p>
+            </span>
           </div>
-          <div className="text-[11px] text-emerald-400/60 font-medium">
-            Nilai gabah terlindungi dari jamur
-          </div>
+          <p className="text-[11px] text-emerald-800">
+            Hasil otomatisasi sirkulasi kipas
+          </p>
         </div>
       </div>
     </div>

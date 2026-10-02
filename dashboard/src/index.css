@@ -4,38 +4,29 @@
 
 @layer base {
   body {
-    @apply font-sans bg-[#0b1120] text-slate-100;
+    @apply bg-appBg text-textTitle font-sans antialiased min-h-screen selection:bg-emeraldPrimary selection:text-white;
   }
 }
 
-/* Custom micro-animations & transitions */
-.glass-panel {
-  background: rgba(21, 31, 50, 0.85);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+/* Fan rotation for ventilation */
+@keyframes spin-fan {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.fan-running {
+  animation: spin-fan 0.8s linear infinite;
+  transform-origin: center;
 }
 
-.glow-emerald {
-  box-shadow: 0 0 25px -5px rgba(16, 185, 129, 0.35);
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
 }
-
-.glow-amber {
-  box-shadow: 0 0 25px -5px rgba(245, 158, 11, 0.4);
+::-webkit-scrollbar-thumb {
+  background: #CBDAD2;
+  border-radius: 999px;
 }
-
-.glow-red {
-  box-shadow: 0 0 25px -5px rgba(239, 68, 68, 0.45);
-}
-
-@keyframes fanSpin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.animate-fan-spin {
-  animation: fanSpin 1.2s linear infinite;
+::-webkit-scrollbar-thumb:hover {
+  background: #a4bab0;
 }

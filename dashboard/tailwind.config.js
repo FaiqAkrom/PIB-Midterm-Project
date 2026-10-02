@@ -6,30 +6,29 @@ export default {
   ],
   theme: {
     extend: {
-      colors: {
-        grain: {
-          50: '#fefce8',
-          100: '#fef9c3',
-          200: '#fef08a',
-          300: '#fde047',
-          400: '#facc15',
-          500: '#eab308',
-          600: '#ca8a04',
-          700: '#a16207',
-          800: '#854d0e',
-          900: '#713f12',
-        },
-        silo: {
-          dark: '#0b1120',
-          card: '#151f32',
-          border: '#23324d',
-          accent: '#10b981'
-        }
-      },
       fontFamily: {
-        sans: ['Plus Jakarta Sans', 'Inter', 'system-ui', 'sans-serif']
+        sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+        mono: ['"JetBrains Mono"', 'monospace'],
+      },
+      colors: {
+        appBg: '#EEF2F0',
+        cardBg: '#FFFFFF',
+        cardBorder: '#E5ECE8',
+        emeraldPrimary: '#1E5336',
+        emeraldHover: '#163E28',
+        emeraldLight: '#E8F5EE',
+        accentOrange: '#E87A38',
+        textTitle: '#17231C',
+        textMuted: '#687B71',
+        statusGreen: '#22A358',
+        statusWarn: '#E29E1B',
+        statusDanger: '#DE4A4A',
+      },
+      boxShadow: {
+        'soft': '0 4px 20px -2px rgba(18, 48, 32, 0.05), 0 2px 6px -1px rgba(18, 48, 32, 0.03)',
+        'pill': '0 2px 8px rgba(0, 0, 0, 0.04)',
       }
-    },
+    }
   },
   plugins: [],
 }

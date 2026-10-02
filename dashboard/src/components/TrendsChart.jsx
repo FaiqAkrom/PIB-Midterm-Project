@@ -18,7 +18,7 @@ export default function TrendsChart({ telemetryHistory = [], onRangeChange, curr
   // Format data untuk grafik
   const formattedData = [...telemetryHistory]
     .reverse()
-    .map((item, idx) => {
+    .map((item) => {
       const date = item.created_at ? new Date(item.created_at) : new Date();
       const timeStr = date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       return {
@@ -31,65 +31,75 @@ export default function TrendsChart({ telemetryHistory = [], onRangeChange, curr
     });
 
   return (
-    <div className="glass-panel rounded-2xl p-5 sm:p-6 border border-slate-800">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-800/80">
+    <div className="bg-cardBg rounded-2xl p-5 sm:p-6 border border-cardBorder shadow-soft">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-cardBorder">
         <div className="flex items-center gap-2">
-          <Activity className="w-5 h-5 text-emerald-400" />
-          <h3 className="text-lg font-bold text-white">Grafik Tren Mikroklimat & Ambang Batas</h3>
+          <div className="w-8 h-8 rounded-lg bg-emeraldLight text-emeraldPrimary flex items-center justify-center font-bold">
+            <Activity className="w-4 h-4" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-textTitle">Grafik Tren Mikroklimat & Ambang Batas</h3>
+            <p className="text-xs text-textMuted">Data historis telemetri sensor lumbung</p>
+          </div>
         </div>
 
         {/* Pemilih Tab & Rentang Waktu */}
         <div className="flex flex-wrap items-center gap-2">
           {/* Filter Metrik */}
-          <div className="flex bg-slate-900/80 p-1 rounded-lg border border-slate-800 text-xs">
+          <div className="flex bg-appBg p-1 rounded-xl border border-cardBorder text-xs font-semibold">
             <button
               onClick={() => setActiveMetric('all')}
-              className={`px-2.5 py-1 rounded-md transition font-medium cursor-pointer ${
-                activeMetric === 'all' ? 'bg-slate-700 text-white font-bold' : 'text-slate-400 hover:text-slate-200'
+              className={`px-3 py-1 rounded-lg transition ${
+                activeMetric === 'all' ? 'bg-cardBg text-emeraldPrimary shadow-pill' : 'text-textMuted hover:text-textTitle'
               }`}
             >
               Semua
             </button>
             <button
               onClick={() => setActiveMetric('temp')}
-              className={`px-2.5 py-1 rounded-md transition font-medium cursor-pointer ${
-                activeMetric === 'temp' ? 'bg-orange-500/20 text-orange-400 font-bold' : 'text-slate-400 hover:text-slate-200'
+              className={`px-3 py-1 rounded-lg transition ${
+                activeMetric === 'temp' ? 'bg-cardBg text-accentOrange shadow-pill' : 'text-textMuted hover:text-textTitle'
               }`}
             >
               Suhu
             </button>
             <button
               onClick={() => setActiveMetric('humidity')}
-              className={`px-2.5 py-1 rounded-md transition font-medium cursor-pointer ${
-                activeMetric === 'humidity' ? 'bg-blue-500/20 text-blue-400 font-bold' : 'text-slate-400 hover:text-slate-200'
+              className={`px-3 py-1 rounded-lg transition ${
+                activeMetric === 'humidity' ? 'bg-cardBg text-emeraldPrimary shadow-pill' : 'text-textMuted hover:text-textTitle'
               }`}
             >
-              Kelembapan
+              RH %
             </button>
             <button
               onClick={() => setActiveMetric('gas')}
-              className={`px-2.5 py-1 rounded-md transition font-medium cursor-pointer ${
-                activeMetric === 'gas' ? 'bg-purple-500/20 text-purple-400 font-bold' : 'text-slate-400 hover:text-slate-200'
+              className={`px-3 py-1 rounded-lg transition ${
+                activeMetric === 'gas' ? 'bg-cardBg text-statusDanger shadow-pill' : 'text-textMuted hover:text-textTitle'
               }`}
             >
               Gas
             </button>
           </div>
 
-          {/* Rentang Waktu */}
-          <div className="flex bg-slate-900/80 p-1 rounded-lg border border-slate-800 text-xs">
+          {/* Pemilih Rentang Waktu */}
+          <div className="flex items-center gap-1 text-xs text-textMuted">
+            <Clock className="w-3.5 h-3.5" />
             <button
-              onClick={() => onRangeChange('1h')}
-              className={`px-3 py-1 rounded-md transition font-medium cursor-pointer ${
-                currentRange === '1h' ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-slate-200'
+              onClick={() => onRangeChange?.('1h')}
+              className={`px-2.5 py-1 rounded-lg font-semibold transition ${
+                currentRange === '1h'
+                  ? 'bg-emeraldPrimary text-white'
+                  : 'bg-appBg hover:bg-emeraldLight text-textMuted'
               }`}
             >
               1 Jam
             </button>
             <button
-              onClick={() => onRangeChange('24h')}
-              className={`px-3 py-1 rounded-md transition font-medium cursor-pointer ${
-                currentRange === '24h' ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-slate-200'
+              onClick={() => onRangeChange?.('24h')}
+              className={`px-2.5 py-1 rounded-lg font-semibold transition ${
+                currentRange === '24h'
+                  ? 'bg-emeraldPrimary text-white'
+                  : 'bg-appBg hover:bg-emeraldLight text-textMuted'
               }`}
             >
               24 Jam
@@ -98,87 +108,90 @@ export default function TrendsChart({ telemetryHistory = [], onRangeChange, curr
         </div>
       </div>
 
-      {/* Kontainer Grafik */}
-      <div className="w-full h-72 sm:h-80 mt-4">
+      {/* Area Grafik Recharts */}
+      <div className="mt-5 h-72 w-full">
         {formattedData.length === 0 ? (
-          <div className="w-full h-full flex items-center justify-center text-slate-500 text-sm">
-            Menunggu data telemetri pertama masuk...
+          <div className="h-full flex items-center justify-center text-textMuted text-xs">
+            Menunggu data telemetri pertama dari sensor ESP32...
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={formattedData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-              <XAxis dataKey="time" stroke="#64748b" tick={{ fontSize: 11 }} />
-              <YAxis yAxisId="left" stroke="#64748b" tick={{ fontSize: 11 }} domain={[0, 100]} />
-              {activeMetric === 'gas' && (
-                <YAxis yAxisId="gasAxis" orientation="right" stroke="#c084fc" tick={{ fontSize: 11 }} domain={[100, 1000]} />
-              )}
+              <CartesianGrid strokeDasharray="3 3" stroke="#E5ECE8" vertical={false} />
+              <XAxis dataKey="time" stroke="#687B71" fontSize={11} tickLine={false} />
+              <YAxis stroke="#687B71" fontSize={11} tickLine={false} domain={['auto', 'auto']} />
               <Tooltip
                 contentStyle={{
-                  backgroundColor: '#0f172a',
-                  borderColor: '#334155',
-                  borderRadius: '0.75rem',
-                  fontSize: '0.75rem',
-                  color: '#fff'
+                  backgroundColor: '#FFFFFF',
+                  borderColor: '#E5ECE8',
+                  borderRadius: '12px',
+                  boxShadow: '0 4px 20px -2px rgba(18, 48, 32, 0.08)',
+                  fontSize: '12px',
+                  color: '#17231C'
                 }}
               />
-              <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
+              <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
 
-              {/* Garis Ambang Batas Penting */}
-              {(activeMetric === 'all' || activeMetric === 'humidity') && (
-                <ReferenceLine yAxisId="left" y={70} stroke="#f59e0b" strokeDasharray="4 4" label={{ value: 'Batas RH 70%', fill: '#f59e0b', fontSize: 10 }} />
-              )}
-              {(activeMetric === 'all' || activeMetric === 'humidity') && (
-                <ReferenceLine yAxisId="left" y={75} stroke="#ef4444" strokeDasharray="3 3" label={{ value: 'Kritis RH 75%', fill: '#ef4444', fontSize: 10 }} />
-              )}
+              {/* Garis Ambang Batas Kritis */}
               {(activeMetric === 'all' || activeMetric === 'temp') && (
-                <ReferenceLine yAxisId="left" y={30} stroke="#f97316" strokeDasharray="4 4" label={{ value: 'Suhu 30°C', fill: '#f97316', fontSize: 10 }} />
+                <ReferenceLine y={32} stroke="#DE4A4A" strokeDasharray="3 3" label={{ value: 'Batas Suhu 32°C', fill: '#DE4A4A', fontSize: 10, position: 'insideTopRight' }} />
+              )}
+              {(activeMetric === 'all' || activeMetric === 'humidity') && (
+                <ReferenceLine y={70} stroke="#E29E1B" strokeDasharray="3 3" label={{ value: 'Batas RH 70%', fill: '#E29E1B', fontSize: 10, position: 'insideTopLeft' }} />
               )}
 
-              {/* Garis Data Suhu */}
+              {/* Garis Suhu */}
               {(activeMetric === 'all' || activeMetric === 'temp') && (
                 <Line
-                  yAxisId="left"
                   type="monotone"
                   dataKey="temp"
                   name="Suhu (°C)"
-                  stroke="#fb923c"
+                  stroke="#E87A38"
                   strokeWidth={2.5}
                   dot={false}
-                  activeDot={{ r: 5 }}
+                  activeDot={{ r: 5, fill: '#E87A38' }}
                 />
               )}
 
-              {/* Garis Data Kelembapan */}
+              {/* Garis Kelembapan */}
               {(activeMetric === 'all' || activeMetric === 'humidity') && (
                 <Line
-                  yAxisId="left"
                   type="monotone"
                   dataKey="humidity"
                   name="Kelembapan (%)"
-                  stroke="#38bdf8"
+                  stroke="#1E5336"
                   strokeWidth={2.5}
                   dot={false}
-                  activeDot={{ r: 5 }}
+                  activeDot={{ r: 5, fill: '#1E5336' }}
                 />
               )}
 
-              {/* Garis Data Gas */}
+              {/* Garis Gas */}
               {(activeMetric === 'all' || activeMetric === 'gas') && (
                 <Line
-                  yAxisId={activeMetric === 'gas' ? 'gasAxis' : 'left'}
                   type="monotone"
                   dataKey="gas"
-                  name={activeMetric === 'gas' ? 'Gas (ppm)' : 'Gas (/10)'}
-                  stroke="#c084fc"
+                  name="Gas Busuk (PPM)"
+                  stroke="#DE4A4A"
                   strokeWidth={2}
                   dot={false}
-                  activeDot={{ r: 5 }}
+                  activeDot={{ r: 4, fill: '#DE4A4A' }}
                 />
               )}
             </LineChart>
           </ResponsiveContainer>
         )}
+      </div>
+
+      <div className="mt-3 pt-3 border-t border-cardBorder flex flex-wrap items-center justify-between text-xs text-textMuted gap-2">
+        <span className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-statusGreen" />
+          Kondisi Ideal: Suhu 24°C - 30°C | RH 60% - 68%
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-statusDanger" />
+          Ambang Waspada Kipas: RH &gt; 70% atau Gas &gt; 35 PPM
+        </span>
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-# 🌾 Silo-Guard — Smart Post-Harvest Granary IoT & Digital Twin
+# Silo-Guard — Smart Post-Harvest Granary IoT & Digital Twin
 ### Sistem Manajemen Lumbung Pascapanen Cerdas Berbasis Digital Twin IoT & Kearifan Lokal Nusantara
 
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B%20%7C%2020%2B-green.svg)](https://nodejs.org/)
@@ -8,7 +8,7 @@
 
 ---
 
-## 📖 Ringkasan Proyek
+## Ringkasan Proyek
 
 **Silo-Guard** adalah prototipe sistem manajemen lumbung padi pascapanen terintegrasi yang memadukan tiga pilar utama:
 1. **Pemantauan Mikroklimat Presisi:** Sensor virtual suhu & kelembapan (DHT22) serta gas pembusukan organik (MQ-2/MQ-135) yang terhubung ke ESP32.
@@ -17,11 +17,11 @@
 
 ---
 
-## 🏛️ Diagram Arsitektur Sistem
+## Diagram Arsitektur Sistem
 
 ```mermaid
 graph TD
-    subgraph Edge_IoT["🌾 Lapisan IoT (ESP32 Virtual Wokwi)"]
+    subgraph Edge_IoT["Lapisan IoT (ESP32 Virtual Wokwi)"]
         DHT["Sensor DHT22<br/>(Suhu & Kelembapan)"]
         MQ["Potensiometer Simulator<br/>(Gas Pembusukan MQ-2)"]
         RELAY["Relay & LED Indikator<br/>(Kipas Ventilasi Lumbung)"]
@@ -32,11 +32,11 @@ graph TD
         ESP -->|GPIO 4 & 2| RELAY
     end
 
-    subgraph Broker["📡 MQTT Broker Publik"]
+    subgraph Broker["MQTT Broker Publik"]
         HIVEMQ["HiveMQ Broker<br/>broker.hivemq.com:1883"]
     end
 
-    subgraph Backend_Cloud["⚙️ Backend & Engine Analisis (Node.js Express)"]
+    subgraph Backend_Cloud["Backend & Engine Analisis (Node.js Express)"]
         MQTT_IN["MQTT Ingestion & Zod Validation"]
         HTTP_FALLBACK["HTTP POST /api/telemetry (Fallback)"]
         ANOMALY["Engine Deteksi Anomali & Moving Average"]
@@ -45,12 +45,12 @@ graph TD
         LOCALE_LAYER["Lapisan Kamus Budaya (kearifan_lokal.json)"]
     end
 
-    subgraph Storage["🗄️ Database & Realtime"]
+    subgraph Storage["Database & Realtime"]
         SUPABASE["Supabase Postgres<br/>(silos, telemetry, alerts, loss_estimates)"]
         FALLBACK_STORE["In-Memory Cache & SSE Broadcaster"]
     end
 
-    subgraph Frontend["🖥️ Dashboard Petani (Vite + React + Tailwind)"]
+    subgraph Frontend["Dashboard Petani (Vite + React + Tailwind)"]
         DASH_HEADER["Status Lumbung & Pemilih Profil Adat"]
         DASH_CARDS["Kartu Metrik Suhu, RH, Gas & Kipas"]
         DASH_GAUGE["Panel Analisis Ekonomi & Pencegahan Susut"]
@@ -82,17 +82,17 @@ graph TD
 
 ---
 
-## 📡 Daftar Topik MQTT
+## Daftar Topik MQTT
 
 | Topik | Arah Aliran | Payload Contoh | Deskripsi |
 | :--- | :--- | :--- | :--- |
-| `silo-guard/<silo_id>/telemetry` | ESP32 ➔ Backend | `{"silo_id":"silo-01","temp":28.4,"humidity":72.1,"gas":340,"fan":false,"ts":1727874000}` | Telemetri periodik dikirim tiap 5 detik |
-| `silo-guard/<silo_id>/command` | Backend ➔ ESP32 | `{"fan":true,"ts":1727874000}` | Perintah menyalakan/mematikan kipas |
-| `silo-guard/<silo_id>/status` | ESP32 ➔ Backend | `{"silo_id":"silo-01","fan":true,"source":"backend_command","ts":1727874000}` | Konfirmasi status fisik kipas dari ESP32 |
+| `silo-guard/<silo_id>/telemetry` | ESP32 -> Backend | `{"silo_id":"silo-01","temp":28.4,"humidity":72.1,"gas":340,"fan":false,"ts":1727874000}` | Telemetri periodik dikirim tiap 5 detik |
+| `silo-guard/<silo_id>/command` | Backend -> ESP32 | `{"fan":true,"ts":1727874000}` | Perintah menyalakan/mematikan kipas |
+| `silo-guard/<silo_id>/status` | ESP32 -> Backend | `{"silo_id":"silo-01","fan":true,"source":"backend_command","ts":1727874000}` | Konfirmasi status fisik kipas dari ESP32 |
 
 ---
 
-## 📂 Struktur Repositori
+## Struktur Repositori
 
 ```
 silo-guard/
@@ -141,7 +141,7 @@ silo-guard/
 
 ---
 
-## 🚀 Panduan Menjalankan Sistem
+## Panduan Menjalankan Sistem
 
 ### 1. Prasyarat
 - **Node.js**: v18.8.0 atau lebih baru (mendukung ESM & Node native test runner).
@@ -149,7 +149,7 @@ silo-guard/
 
 ### 2. Setup Database Supabase (Opsional tapi Direkomendasikan)
 1. Buat proyek baru di [supabase.com](https://supabase.com/).
-2. Buka menu **SQL Editor**, salin seluruh isi [supabase/migrations/001_init.sql](file:///C:/Users/user/.gemini/antigravity-ide/scratch/silo-guard/supabase/migrations/001_init.sql) dan jalankan (*Run*).
+2. Buka menu **SQL Editor**, salin seluruh isi `supabase/migrations/001_init.sql` dan jalankan (*Run*).
 3. Buka **Project Settings -> API**, salin `Project URL` dan `anon key` / `service_role key`.
 4. Masukkan ke file `backend/.env`:
    ```ini
@@ -159,7 +159,7 @@ silo-guard/
    SUPABASE_SERVICE_ROLE_KEY=eyJh......
    SUPABASE_ANON_KEY=eyJh......
    ```
-   > 💡 **Graceful Degradation Note:** Jika Anda belum memiliki akun Supabase, biarkan `.env` kosong. Backend otomatis berjalan menggunakan **Mode In-Memory Store & SSE Streaming**, sehingga 100% fitur tetap dapat diuji secara langsung!
+   > **Graceful Degradation Note:** Jika Anda belum memiliki akun Supabase, biarkan `.env` kosong. Backend otomatis berjalan menggunakan **Mode In-Memory Store & SSE Streaming**, sehingga 100% fitur tetap dapat diuji secara langsung!
 
 ---
 
@@ -190,15 +190,15 @@ npm run dev
 1. Kunjungi [Wokwi ESP32](https://wokwi.com/).
 2. Buat proyek baru **ESP32 DevKit v1**.
 3. Salin:
-   - Isi [sketch.ino](file:///C:/Users/user/.gemini/antigravity-ide/scratch/silo-guard/firmware/wokwi/sketch.ino) ke tab kode utama.
-   - Isi [diagram.json](file:///C:/Users/user/.gemini/antigravity-ide/scratch/silo-guard/firmware/wokwi/diagram.json) ke tab diagram.
+   - Isi `firmware/wokwi/sketch.ino` ke tab kode utama.
+   - Isi `firmware/wokwi/diagram.json` ke tab diagram.
    - Tambahkan library di tab `libraries.txt`: `DHT sensor library`, `PubSubClient`, `ArduinoJson`.
 4. Tekan tombol **Start Simulation (Play)**.
 5. Amati telemetri terkirim di Serial Monitor Wokwi dan data langsung muncul di Dashboard Web dalam waktu < 2 detik!
 
 ---
 
-## 🎬 Skenario Demonstrasi 3 Menit
+## Skenario Demonstrasi 3 Menit
 
 Untuk mendemonstrasikan sistem end-to-end secara cepat tanpa perlu membuka Wokwi:
 
@@ -233,7 +233,7 @@ node scripts/simulate.js --http
 
 ---
 
-## 🧪 Menjalankan Unit Test
+## Menjalankan Unit Test
 
 Untuk menguji algoritma deteksi anomali, histeresis kipas, dan formula susut ekonomi:
 
@@ -243,13 +243,13 @@ npm test
 ```
 
 Semua pengujian berjalan secara native menggunakan Node test runner:
-- ✅ Deteksi kondisi Aman, Waspada, Bahaya & Tren kenaikan cepat 5 menit.
-- ✅ Perilaku histeresis kipas (tidak chattering saat fluktuasi sesaat).
-- ✅ Model matematis kerugian ekonomi dan nilai pencegahan susut gabah.
+- [x] Deteksi kondisi Aman, Waspada, Bahaya & Tren kenaikan cepat 5 menit.
+- [x] Perilaku histeresis kipas (tidak chattering saat fluktuasi sesaat).
+- [x] Model matematis kerugian ekonomi dan nilai pencegahan susut gabah.
 
 ---
 
-## 🏛️ Kebijakan Kearifan Lokal & Batasan
+## Kebijakan Kearifan Lokal & Batasan
 
 - **Istilah Adat Berstatus Placeholder:** Istilah seperti *Leuit, Gedhong Pantun, Kudu Taliti, Rahayu* diambil dari tinjauan pustaka etno-agronomi dan **wajib divalidasi oleh pemangku adat/PPL setempat** sebelum implementasi nyata di lapangan.
-- **Model Simulasi:** Angka susut persentase dan Rupiah merupakan simulasi matematis indikatif untuk *early warning*, bukan timbangan riil laboratorium. Baca selengkapnya di [docs/LIMITATIONS.md](file:///C:/Users/user/.gemini/antigravity-ide/scratch/silo-guard/docs/LIMITATIONS.md) dan [docs/ASSUMPTIONS.md](file:///C:/Users/user/.gemini/antigravity-ide/scratch/silo-guard/docs/ASSUMPTIONS.md).
+- **Model Simulasi:** Angka susut persentase dan Rupiah merupakan simulasi matematis indikatif untuk *early warning*, bukan timbangan riil laboratorium. Baca selengkapnya di `docs/LIMITATIONS.md` dan `docs/ASSUMPTIONS.md`.

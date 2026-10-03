@@ -12,6 +12,11 @@
  */
 
 import mqtt from 'mqtt';
+import dns from 'node:dns';
+
+try {
+  dns.setDefaultResultOrder('ipv4first');
+} catch (e) {}
 
 const args = process.argv.slice(2);
 const useHttp = args.includes('--http');

@@ -4,6 +4,14 @@
 
 import mqtt from 'mqtt';
 import dotenv from 'dotenv';
+import dns from 'node:dns';
+
+// Pastikan prioritas IPv4 agar koneksi ke broker MQTT publik (seperti HiveMQ) tidak gagal ECONNREFUSED di Windows
+try {
+  dns.setDefaultResultOrder('ipv4first');
+} catch (e) {
+  // Ignore jika versi Node tidak mendukung
+}
 
 dotenv.config();
 
@@ -50,6 +58,8 @@ class MqttService {
         const payloadStr = payload.toString();
         const data = JSON.parse(payloadStr);
 
+        console.log(`[MQTT RECV] Diterima dari topik: ${topic} |`, JSON.stringify(data));
+
         if (topic.endsWith('/telemetry')) {
           if (this.onTelemetryHandler) {
             this.onTelemetryHandler(data, topic);
@@ -60,7 +70,7 @@ class MqttService {
           }
         }
       } catch (err) {
-        console.warn(`[MQTT PARSE WARN] Gagal membaca pesan dari topik ${topic}:`, err.message);
+        console.warn(`[MQTT PARSE WARN] Gagal membaca pesan dari topik ${topic}:`, err.message, '| Raw payload:', payload.toString());
       }
     });
 

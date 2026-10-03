@@ -81,8 +81,18 @@ VALUES
     8500.0,
     13200.0,
     'Desa Karanganyar, Boyolali'
-  )
 ON CONFLICT (id) DO NOTHING;
+
+-- Seed riwayat telemetri awal agar grafik kurva langsung terbentuk
+INSERT INTO telemetry (silo_id, temp, humidity, gas, fan_on, created_at)
+SELECT
+  'silo-01',
+  27.0 + round((sin(s.i * 0.5) * 1.5)::numeric, 1),
+  65.0 + round((cos(s.i * 0.4) * 4.0)::numeric, 1),
+  280 + round(sin(s.i * 0.3) * 50),
+  false,
+  now() - (s.i || ' minutes')::interval
+FROM generate_series(30, 1, -2) AS s(i);
 
 -- ================= VERIFIKASI =================
 SELECT 'Schema Silo-Guard berhasil dibuat!' AS status;

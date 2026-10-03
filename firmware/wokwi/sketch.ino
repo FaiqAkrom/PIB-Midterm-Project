@@ -1,15 +1,3 @@
-/*
- * SILO-GUARD — Smart Post-Harvest Granary IoT Firmware
- * Target: ESP32 (Wokwi Virtual Simulator)
- * 
- * Fitur:
- * - Pembacaan DHT22 (Suhu & Kelembapan)
- * - Pembacaan ADC Potensiometer (Simulasi Sensor Gas Pembusukan MQ-2/MQ-135)
- * - Aktuator Relay & LED Ventilasi Lumbung (Kipas Sirkulasi)
- * - Telemetri Periodik Non-Blocking (setiap 5 detik) via MQTT
- * - Subscribe Kontrol Aktuator via MQTT
- * - Auto-reconnect WiFi & MQTT tanpa delay blocking
- */
 
 #include <WiFi.h>
 #include <PubSubClient.h>

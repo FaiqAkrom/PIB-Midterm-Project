@@ -32,10 +32,33 @@ if (databaseUrl) {
       connectionTimeoutMillis: 5000
     });
 
-    // Test koneksi saat startup
-    pgPool.query('SELECT 1').then(() => {
+    // Test koneksi saat startup & seed jika data kosong
+    pgPool.query('SELECT 1').then(async () => {
       isPgConfigured = true;
       console.log('[DB] ✅ Terhubung ke PostgreSQL Lokal via DATABASE_URL.');
+
+      // Pastikan ada data awal telemetri agar grafik kurva langsung terbentuk
+      try {
+        const countRes = await pgPool.query('SELECT count(*) FROM telemetry');
+        const count = parseInt(countRes?.rows?.[0]?.count || '0', 10);
+        if (count < 2) {
+          console.log('[DB] ℹ️  Tabel telemetry kosong/kurang dari 2 titik, melakukan auto-seeding riwayat...');
+          const now = Date.now();
+          for (let i = 20; i >= 1; i--) {
+            const time = new Date(now - i * 120000);
+            const temp = Number((27.2 + Math.sin(i / 2.5) * 1.6).toFixed(1));
+            const hum = Number((64.5 + Math.cos(i / 2.5) * 4.2).toFixed(1));
+            const gas = Math.round(270 + Math.sin(i / 2) * 55);
+            await pgPool.query(
+              'INSERT INTO telemetry (silo_id, temp, humidity, gas, fan_on, created_at) VALUES ($1, $2, $3, $4, $5, $6)',
+              ['silo-01', temp, hum, gas, hum > 70, time.toISOString()]
+            );
+          }
+          console.log('[DB] ✅ Auto-seeding telemetri berhasil.');
+        }
+      } catch (seedErr) {
+        console.warn('[DB] Catatan saat cek/seed telemetry:', seedErr.message);
+      }
     }).catch((err) => {
       console.warn('[DB] ⚠️  Gagal konek ke PostgreSQL Lokal:', err.message);
       console.warn('[DB]    Pastikan PostgreSQL berjalan dan DATABASE_URL benar.');

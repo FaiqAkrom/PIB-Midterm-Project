@@ -115,71 +115,78 @@ export default function TrendsChart({ telemetryHistory = [], onRangeChange, curr
             Menunggu data telemetri pertama dari sensor ESP32...
           </div>
         ) : (
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={formattedData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E5ECE8" vertical={false} />
-              <XAxis dataKey="time" stroke="#687B71" fontSize={11} tickLine={false} />
-              <YAxis stroke="#687B71" fontSize={11} tickLine={false} domain={['auto', 'auto']} />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#FFFFFF',
-                  borderColor: '#E5ECE8',
-                  borderRadius: '12px',
-                  boxShadow: '0 4px 20px -2px rgba(18, 48, 32, 0.08)',
-                  fontSize: '12px',
-                  color: '#17231C'
-                }}
-              />
-              <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
-
-              {/* Garis Ambang Batas Kritis */}
-              {(activeMetric === 'all' || activeMetric === 'temp') && (
-                <ReferenceLine y={32} stroke="#DE4A4A" strokeDasharray="3 3" label={{ value: 'Batas Suhu 32°C', fill: '#DE4A4A', fontSize: 10, position: 'insideTopRight' }} />
-              )}
-              {(activeMetric === 'all' || activeMetric === 'humidity') && (
-                <ReferenceLine y={70} stroke="#E29E1B" strokeDasharray="3 3" label={{ value: 'Batas RH 70%', fill: '#E29E1B', fontSize: 10, position: 'insideTopLeft' }} />
-              )}
-
-              {/* Garis Suhu */}
-              {(activeMetric === 'all' || activeMetric === 'temp') && (
-                <Line
-                  type="monotone"
-                  dataKey="temp"
-                  name="Suhu (°C)"
-                  stroke="#E87A38"
-                  strokeWidth={2.5}
-                  dot={false}
-                  activeDot={{ r: 5, fill: '#E87A38' }}
+          <>
+            {formattedData.length === 1 && (
+              <div className="text-[11px] text-amber-600 bg-amber-50/80 border border-amber-200 px-3 py-1 rounded-lg mb-2 text-center">
+                Baru 1 titik telemetri tercatat. Kurva garis akan otomatis tersambung saat titik telemetri berikutnya masuk.
+              </div>
+            )}
+            <ResponsiveContainer width="100%" height={formattedData.length === 1 ? '90%' : '100%'}>
+              <LineChart data={formattedData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#E5ECE8" vertical={false} />
+                <XAxis dataKey="time" stroke="#687B71" fontSize={11} tickLine={false} />
+                <YAxis stroke="#687B71" fontSize={11} tickLine={false} domain={['auto', 'auto']} />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: '#FFFFFF',
+                    borderColor: '#E5ECE8',
+                    borderRadius: '12px',
+                    boxShadow: '0 4px 20px -2px rgba(18, 48, 32, 0.08)',
+                    fontSize: '12px',
+                    color: '#17231C'
+                  }}
                 />
-              )}
+                <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
 
-              {/* Garis Kelembapan */}
-              {(activeMetric === 'all' || activeMetric === 'humidity') && (
-                <Line
-                  type="monotone"
-                  dataKey="humidity"
-                  name="Kelembapan (%)"
-                  stroke="#1E5336"
-                  strokeWidth={2.5}
-                  dot={false}
-                  activeDot={{ r: 5, fill: '#1E5336' }}
-                />
-              )}
+                {/* Garis Ambang Batas Kritis */}
+                {(activeMetric === 'all' || activeMetric === 'temp') && (
+                  <ReferenceLine y={32} stroke="#DE4A4A" strokeDasharray="3 3" label={{ value: 'Batas Suhu 32°C', fill: '#DE4A4A', fontSize: 10, position: 'insideTopRight' }} />
+                )}
+                {(activeMetric === 'all' || activeMetric === 'humidity') && (
+                  <ReferenceLine y={70} stroke="#E29E1B" strokeDasharray="3 3" label={{ value: 'Batas RH 70%', fill: '#E29E1B', fontSize: 10, position: 'insideTopLeft' }} />
+                )}
 
-              {/* Garis Gas */}
-              {(activeMetric === 'all' || activeMetric === 'gas') && (
-                <Line
-                  type="monotone"
-                  dataKey="gas"
-                  name="Gas Busuk (PPM)"
-                  stroke="#DE4A4A"
-                  strokeWidth={2}
-                  dot={false}
-                  activeDot={{ r: 4, fill: '#DE4A4A' }}
-                />
-              )}
-            </LineChart>
-          </ResponsiveContainer>
+                {/* Garis Suhu */}
+                {(activeMetric === 'all' || activeMetric === 'temp') && (
+                  <Line
+                    type="monotone"
+                    dataKey="temp"
+                    name="Suhu (°C)"
+                    stroke="#E87A38"
+                    strokeWidth={2.5}
+                    dot={formattedData.length <= 3 ? { r: 4, fill: '#E87A38' } : false}
+                    activeDot={{ r: 5, fill: '#E87A38' }}
+                  />
+                )}
+
+                {/* Garis Kelembapan */}
+                {(activeMetric === 'all' || activeMetric === 'humidity') && (
+                  <Line
+                    type="monotone"
+                    dataKey="humidity"
+                    name="Kelembapan (%)"
+                    stroke="#1E5336"
+                    strokeWidth={2.5}
+                    dot={formattedData.length <= 3 ? { r: 4, fill: '#1E5336' } : false}
+                    activeDot={{ r: 5, fill: '#1E5336' }}
+                  />
+                )}
+
+                {/* Garis Gas */}
+                {(activeMetric === 'all' || activeMetric === 'gas') && (
+                  <Line
+                    type="monotone"
+                    dataKey="gas"
+                    name="Gas Busuk (PPM)"
+                    stroke="#DE4A4A"
+                    strokeWidth={2}
+                    dot={formattedData.length <= 3 ? { r: 4, fill: '#DE4A4A' } : false}
+                    activeDot={{ r: 4, fill: '#DE4A4A' }}
+                  />
+                )}
+              </LineChart>
+            </ResponsiveContainer>
+          </>
         )}
       </div>
 

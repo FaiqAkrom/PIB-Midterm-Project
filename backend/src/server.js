@@ -5,6 +5,12 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import dns from 'node:dns';
+
+try {
+  dns.setDefaultResultOrder('ipv4first');
+} catch (e) {}
+
 import { z } from 'zod';
 import fs from 'fs';
 import path from 'path';
@@ -163,7 +169,8 @@ export async function processTelemetryIngestion(payload) {
 mqttService.init({
   onTelemetry: async (data, topic) => {
     try {
-      await processTelemetryIngestion(data);
+      const result = await processTelemetryIngestion(data);
+      console.log(`[INGEST SUCCESS] ${data.silo_id} -> Suhu: ${data.temp}°C, Lembap: ${data.humidity}%, Gas: ${data.gas}ppm | Risiko: ${result.riskLevel.toUpperCase()} (Skor: ${result.riskScore})`);
     } catch (err) {
       console.error('[MQTT INGEST ERROR]:', err.message);
     }

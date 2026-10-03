@@ -1,0 +1,16 @@
+[wokwi]
+version = 1
+elf = ""
+firmware = ""
+
+[[library]]
+name = "PubSubClient"
+
+[[library]]
+name = "DHT sensor library"
+
+[[library]]
+name = "Adafruit Unified Sensor"
+
+[[library]]
+name = "ArduinoJson"

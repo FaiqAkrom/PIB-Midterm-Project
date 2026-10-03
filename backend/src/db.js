@@ -1,8 +1,12 @@
 /**
  * Lapisan Akses Data (Database & Realtime Layer) — Silo-Guard
- * Mendukung Supabase Client dengan Fallback InMemory Store yang andal untuk dev/testing lokal.
+ * Prioritas koneksi:
+ *   1. PostgreSQL Lokal  (DATABASE_URL)
+ *   2. Supabase          (SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY)
+ *   3. In-Memory Store   (fallback untuk dev/testing)
  */
 
+import pg from 'pg';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import { EventEmitter } from 'events';
@@ -11,26 +15,59 @@ dotenv.config();
 
 export const dataEvents = new EventEmitter();
 
-// Konfigurasi Supabase
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+const { Pool } = pg;
 
+// ================= LAYER 1: POSTGRESQL LOKAL =================
+let pgPool = null;
+let isPgConfigured = false;
+
+const databaseUrl = process.env.DATABASE_URL;
+if (databaseUrl) {
+  try {
+    pgPool = new Pool({
+      connectionString: databaseUrl,
+      // Batas koneksi yang aman untuk lokal
+      max: 10,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 5000
+    });
+
+    // Test koneksi saat startup
+    pgPool.query('SELECT 1').then(() => {
+      isPgConfigured = true;
+      console.log('[DB] ✅ Terhubung ke PostgreSQL Lokal via DATABASE_URL.');
+    }).catch((err) => {
+      console.warn('[DB] ⚠️  Gagal konek ke PostgreSQL Lokal:', err.message);
+      console.warn('[DB]    Pastikan PostgreSQL berjalan dan DATABASE_URL benar.');
+      pgPool = null;
+    });
+  } catch (err) {
+    console.warn('[DB] ⚠️  Inisialisasi pg Pool gagal:', err.message);
+  }
+}
+
+// ================= LAYER 2: SUPABASE =================
 let supabase = null;
 let isSupabaseConfigured = false;
 
-if (supabaseUrl && supabaseKey && !supabaseUrl.includes('your-project')) {
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+
+if (!databaseUrl && supabaseUrl && supabaseKey && !supabaseUrl.includes('your-project')) {
   try {
     supabase = createClient(supabaseUrl, supabaseKey);
     isSupabaseConfigured = true;
-    console.log('[DB] Menggunakan koneksi Supabase Postgres & Realtime.');
+    console.log('[DB] ✅ Menggunakan koneksi Supabase Postgres & Realtime.');
   } catch (err) {
-    console.warn('[DB] Inisialisasi Supabase gagal, beralih ke InMemory Store:', err.message);
+    console.warn('[DB] ⚠️  Inisialisasi Supabase gagal:', err.message);
   }
-} else {
-  console.log('[DB] Supabase URL/Key belum disetel. Berjalan dalam Mode In-Memory Store untuk pengujian lokal.');
 }
 
-// ================= IN-MEMORY STORE (FALLBACK & CACHE) =================
+if (!databaseUrl && !supabaseUrl) {
+  console.log('[DB] ℹ️  Tidak ada DATABASE_URL atau SUPABASE_URL. Berjalan dalam Mode In-Memory.');
+}
+
+// ================= LAYER 3: IN-MEMORY STORE (FALLBACK) =================
 const memoryStore = {
   silos: [
     {
@@ -58,7 +95,7 @@ const memoryStore = {
   loss_estimates: []
 };
 
-// Seed initial telemetry memory
+// Seed telemetri awal untuk In-Memory
 const nowMs = Date.now();
 for (let i = 12; i >= 0; i--) {
   const ts = new Date(nowMs - i * 60000).toISOString();
@@ -73,21 +110,49 @@ for (let i = 12; i >= 0; i--) {
   });
 }
 
+// ================= HELPER =================
+/**
+ * Jalankan query ke PostgreSQL lokal.
+ * Mengembalikan rows[] atau null jika koneksi belum siap.
+ */
+async function pgQuery(text, params = []) {
+  if (!pgPool) return null;
+  try {
+    const result = await pgPool.query(text, params);
+    return result.rows;
+  } catch (err) {
+    console.warn('[PG QUERY ERROR]', err.message, '| Query:', text);
+    return null;
+  }
+}
+
 // ================= FUNGSI OPERASI DATA =================
 
 export async function getSilos() {
+  // PostgreSQL lokal
+  const rows = await pgQuery('SELECT * FROM silos ORDER BY created_at');
+  if (rows && rows.length > 0) return rows;
+
+  // Supabase
   if (isSupabaseConfigured) {
     const { data, error } = await supabase.from('silos').select('*');
     if (!error && data && data.length > 0) return data;
   }
+
   return memoryStore.silos;
 }
 
 export async function getSiloById(id) {
+  // PostgreSQL lokal
+  const rows = await pgQuery('SELECT * FROM silos WHERE id = $1 LIMIT 1', [id]);
+  if (rows && rows.length > 0) return rows[0];
+
+  // Supabase
   if (isSupabaseConfigured) {
     const { data, error } = await supabase.from('silos').select('*').eq('id', id).single();
     if (!error && data) return data;
   }
+
   return memoryStore.silos.find(s => s.id === id) || memoryStore.silos[0];
 }
 
@@ -101,14 +166,24 @@ export async function saveTelemetry({ silo_id, temp, humidity, gas, fan_on }) {
     created_at: new Date().toISOString()
   };
 
-  // Simpan ke InMemory
+  // Simpan ke In-Memory (selalu, sebagai cache cepat)
   const inMemRecord = { id: Date.now(), ...record };
   memoryStore.telemetry.unshift(inMemRecord);
-  if (memoryStore.telemetry.length > 300) {
-    memoryStore.telemetry.pop();
+  if (memoryStore.telemetry.length > 300) memoryStore.telemetry.pop();
+
+  // PostgreSQL lokal
+  const rows = await pgQuery(
+    `INSERT INTO telemetry (silo_id, temp, humidity, gas, fan_on)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING *`,
+    [silo_id, temp, humidity, gas, fan_on]
+  );
+  if (rows && rows[0]) {
+    dataEvents.emit('telemetry', rows[0]);
+    return rows[0];
   }
 
-  // Jika Supabase aktif, simpan juga ke Postgres
+  // Supabase
   if (isSupabaseConfigured) {
     try {
       const { data, error } = await supabase.from('telemetry').insert([record]).select().single();
@@ -126,23 +201,31 @@ export async function saveTelemetry({ silo_id, temp, humidity, gas, fan_on }) {
 }
 
 export async function getTelemetryHistory(siloId, { limit = 50, range = '1h' } = {}) {
+  // PostgreSQL lokal
+  const rows = await pgQuery(
+    `SELECT * FROM telemetry
+     WHERE silo_id = $1
+     ORDER BY created_at DESC
+     LIMIT $2`,
+    [siloId, Number(limit)]
+  );
+  if (rows && rows.length > 0) return rows;
+
+  // Supabase
   if (isSupabaseConfigured) {
-    let query = supabase
+    const { data, error } = await supabase
       .from('telemetry')
       .select('*')
       .eq('silo_id', siloId)
       .order('created_at', { ascending: false })
       .limit(Number(limit));
-
-    const { data, error } = await query;
     if (!error && data) return data;
   }
 
-  // Fallback memory store
-  const filtered = memoryStore.telemetry
+  // In-Memory fallback
+  return memoryStore.telemetry
     .filter(t => t.silo_id === siloId)
     .slice(0, Number(limit));
-  return filtered;
 }
 
 export async function saveAlert({ silo_id, level, jenis, pesan_teknis, pesan_lokal }) {
@@ -160,6 +243,19 @@ export async function saveAlert({ silo_id, level, jenis, pesan_teknis, pesan_lok
   memoryStore.alerts.unshift(inMemRecord);
   if (memoryStore.alerts.length > 100) memoryStore.alerts.pop();
 
+  // PostgreSQL lokal
+  const rows = await pgQuery(
+    `INSERT INTO alerts (silo_id, level, jenis, pesan_teknis, pesan_lokal, resolved)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING *`,
+    [silo_id, level, jenis, pesan_teknis, pesan_lokal, level === 'aman']
+  );
+  if (rows && rows[0]) {
+    dataEvents.emit('alert', rows[0]);
+    return rows[0];
+  }
+
+  // Supabase
   if (isSupabaseConfigured) {
     try {
       const { data, error } = await supabase.from('alerts').insert([record]).select().single();
@@ -177,25 +273,35 @@ export async function saveAlert({ silo_id, level, jenis, pesan_teknis, pesan_lok
 }
 
 export async function getAlerts({ silo_id, limit = 20 } = {}) {
+  // PostgreSQL lokal
+  if (silo_id) {
+    const rows = await pgQuery(
+      'SELECT * FROM alerts WHERE silo_id = $1 ORDER BY created_at DESC LIMIT $2',
+      [silo_id, Number(limit)]
+    );
+    if (rows && rows.length >= 0 && isPgConfigured) return rows;
+  } else {
+    const rows = await pgQuery(
+      'SELECT * FROM alerts ORDER BY created_at DESC LIMIT $1',
+      [Number(limit)]
+    );
+    if (rows && isPgConfigured) return rows;
+  }
+
+  // Supabase
   if (isSupabaseConfigured) {
     let query = supabase
       .from('alerts')
       .select('*')
       .order('created_at', { ascending: false })
       .limit(Number(limit));
-
-    if (silo_id) {
-      query = query.eq('silo_id', silo_id);
-    }
-
+    if (silo_id) query = query.eq('silo_id', silo_id);
     const { data, error } = await query;
     if (!error && data) return data;
   }
 
   let list = memoryStore.alerts;
-  if (silo_id) {
-    list = list.filter(a => a.silo_id === silo_id);
-  }
+  if (silo_id) list = list.filter(a => a.silo_id === silo_id);
   return list.slice(0, Number(limit));
 }
 
@@ -211,6 +317,17 @@ export async function saveFanEvent({ silo_id, aksi, penyebab }) {
   memoryStore.fan_events.unshift(inMemRecord);
   if (memoryStore.fan_events.length > 50) memoryStore.fan_events.pop();
 
+  // PostgreSQL lokal
+  const rows = await pgQuery(
+    'INSERT INTO fan_events (silo_id, aksi, penyebab) VALUES ($1, $2, $3) RETURNING *',
+    [silo_id, aksi, penyebab]
+  );
+  if (rows && rows[0]) {
+    dataEvents.emit('fan_event', rows[0]);
+    return rows[0];
+  }
+
+  // Supabase
   if (isSupabaseConfigured) {
     try {
       await supabase.from('fan_events').insert([record]);
@@ -238,6 +355,20 @@ export async function saveLossEstimate({ silo_id, risk_score, est_susut_persen, 
   memoryStore.loss_estimates.unshift(inMemRecord);
   if (memoryStore.loss_estimates.length > 100) memoryStore.loss_estimates.pop();
 
+  // PostgreSQL lokal
+  const rows = await pgQuery(
+    `INSERT INTO loss_estimates
+       (silo_id, risk_score, est_susut_persen, est_susut_kg, est_kerugian_rp, est_dicegah_rp)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING *`,
+    [silo_id, risk_score, est_susut_persen, est_susut_kg, est_kerugian_rp, est_dicegah_rp]
+  );
+  if (rows && rows[0]) {
+    dataEvents.emit('loss_estimate', rows[0]);
+    return rows[0];
+  }
+
+  // Supabase
   if (isSupabaseConfigured) {
     try {
       const { data, error } = await supabase.from('loss_estimates').insert([record]).select().single();
@@ -255,6 +386,17 @@ export async function saveLossEstimate({ silo_id, risk_score, est_susut_persen, 
 }
 
 export async function getLatestLossEstimate(siloId) {
+  // PostgreSQL lokal
+  const rows = await pgQuery(
+    `SELECT * FROM loss_estimates
+     WHERE silo_id = $1
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [siloId]
+  );
+  if (rows && rows.length > 0) return rows[0];
+
+  // Supabase
   if (isSupabaseConfigured) {
     const { data, error } = await supabase
       .from('loss_estimates')
@@ -263,7 +405,6 @@ export async function getLatestLossEstimate(siloId) {
       .order('created_at', { ascending: false })
       .limit(1)
       .single();
-
     if (!error && data) return data;
   }
 

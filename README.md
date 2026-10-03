@@ -4,7 +4,7 @@
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B%20%7C%2020%2B-green.svg)](https://nodejs.org/)
 [![Vite + React](https://img.shields.io/badge/Frontend-Vite%20%2B%20React%20%2B%20Tailwind-blue.svg)](https://vitejs.dev/)
 [![Wokwi Simulator](https://img.shields.io/badge/Firmware-ESP32%20Wokwi-orange.svg)](https://wokwi.com/)
-[![Database](https://img.shields.io/badge/Database-Supabase%20Postgres%20Realtime-emerald.svg)](https://supabase.com/)
+[![Database](https://img.shields.io/badge/Database-PostgreSQL%20%7C%20Supabase%20%7C%20In--Memory-emerald.svg)](https://supabase.com/)
 
 ---
 
@@ -45,9 +45,10 @@ graph TD
         LOCALE_LAYER["Lapisan Kamus Budaya (kearifan_lokal.json)"]
     end
 
-    subgraph Storage["Database & Realtime"]
-        SUPABASE["Supabase Postgres<br/>(silos, telemetry, alerts, loss_estimates)"]
-        FALLBACK_STORE["In-Memory Cache & SSE Broadcaster"]
+    subgraph Storage["Database & Realtime (Multi-Tier Storage)"]
+        PG_LOCAL["PostgreSQL Lokal (pg Pool)<br/>(DATABASE_URL)"]
+        SUPABASE["Supabase Postgres & Realtime<br/>(SUPABASE_URL)"]
+        FALLBACK_STORE["In-Memory Store & SSE Broadcaster<br/>(Zero-Config Fallback)"]
     end
 
     subgraph Frontend["Dashboard Petani (Vite + React + Tailwind)"]
@@ -72,9 +73,11 @@ graph TD
     FAN_CTRL -->|Publish Command: fan=true/false| HIVEMQ
     HIVEMQ -->|Topic: silo-guard/silo-01/command| ESP
 
+    ANOMALY --> PG_LOCAL
     ANOMALY --> SUPABASE
     ANOMALY --> FALLBACK_STORE
     
+    PG_LOCAL -->|Server-Sent Events / SSE| Frontend
     SUPABASE -->|Supabase Realtime| Frontend
     FALLBACK_STORE -->|Server-Sent Events / SSE| Frontend
     Frontend -->|Kontrol Manual POST /api/silos/:id/fan| FAN_CTRL
@@ -100,8 +103,9 @@ silo-guard/
 │   └── wokwi/
 │       ├── diagram.json          # Diagram pengkabelan ESP32 + DHT22 + Potentiometer + Relay + LED
 │       ├── sketch.ino            # Firmware Arduino C++ non-blocking (millis)
-│       ├── libraries.txt         # DHT sensor library, PubSubClient, ArduinoJson
-│       └── README.md             # Panduan pengujian langsung di Wokwi.com
+│       ├── libraries.txt         # Library dependency: DHT sensor library, PubSubClient, ArduinoJson
+│       ├── wokwi.toml            # Konfigurasi simulasi Wokwi CLI & browser
+│       └── README.md             # Panduan pengujian cepat firmware di Wokwi
 ├── backend/
 │   ├── config/
 │   │   └── thresholds.js         # Ambang batas suhu, RH, gas, histeresis & moving average
@@ -111,10 +115,10 @@ silo-guard/
 │   │   ├── economics.js          # Model empiris susut gabah & kerugian Rupiah
 │   │   ├── fanController.js      # Otomasi kipas dengan histeresis 3 siklus aman
 │   │   ├── mqttClient.js         # Klien HiveMQ MQTT pub/sub
-│   │   └── db.js                 # Integrasi Supabase Postgres + In-Memory Fallback
+│   │   └── db.js                 # Integrasi PostgreSQL Lokal + Supabase + In-Memory Fallback
 │   ├── tests/
 │   │   └── silo_guard.test.js    # Unit test deteksi anomali, histeresis, dan ekonomi
-│   ├── .env.example
+│   ├── .env.example              # Template variabel lingkungan backend
 │   └── package.json
 ├── dashboard/
 │   ├── src/
@@ -127,15 +131,17 @@ silo-guard/
 │   └── package.json
 ├── supabase/
 │   └── migrations/
-│       └── 001_init.sql          # Migrasi skema database, index, realtime, seed data
+│       └── 001_init.sql          # Migrasi skema database Supabase, index, realtime publication & seed data
 ├── locale/
 │   └── kearifan_lokal.json       # Kamus istilah & pesan budaya (Sunda, Jawa, Petani Indonesia)
 ├── scripts/
+│   ├── init_db.sql               # Skrip DDL skema & seed data untuk PostgreSQL lokal
 │   └── simulate.js               # Skrip simulator multi-skenario (normal -> lembap -> busuk -> pulih)
 ├── docs/
 │   ├── ASSUMPTIONS.md            # Catatan asumsi teknis dan operasional
-│   └── LIMITATIONS.md            # Batasan instrumen dan model simulasi
-├── package.json                  # Root monorepo scripts
+│   ├── LIMITATIONS.md            # Batasan instrumen dan model simulasi
+│   └── WOKWI_CONNECTION.md       # Panduan arsitektur koneksi & pemecahan masalah Wokwi-MQTT
+├── package.json                  # Root monorepo scripts & dependencies
 └── README.md
 ```
 
@@ -147,68 +153,101 @@ silo-guard/
 - **Node.js**: v18.8.0 atau lebih baru (mendukung ESM & Node native test runner).
 - Koneksi internet untuk terhubung ke broker publik `broker.hivemq.com:1883`.
 
-### 2. Setup Database Supabase (Opsional tapi Direkomendasikan)
-1. Buat proyek baru di [supabase.com](https://supabase.com/).
-2. Buka menu **SQL Editor**, salin seluruh isi `supabase/migrations/001_init.sql` dan jalankan (*Run*).
-3. Buka **Project Settings -> API**, salin `Project URL` dan `anon key` / `service_role key`.
-4. Masukkan ke file `backend/.env`:
+---
+
+### 2. Konfigurasi Database (Tiga Pilihan Fleksibel)
+
+Backend Silo-Guard dirancang adaptif dengan tiga opsi penyimpanan data (diatur di file `backend/.env`):
+
+#### **Opsi A: PostgreSQL Lokal (Prioritas Utama)**
+Cocok untuk lingkungan lumbung mandiri/offline:
+1. Buat database PostgreSQL (contoh nama: `siloguard`):
+   ```bash
+   createdb -U postgres siloguard
+   ```
+2. Jalankan skrip skema database:
+   ```bash
+   psql -U postgres -d siloguard -f scripts/init_db.sql
+   ```
+3. Set variabel di `backend/.env`:
    ```ini
-   PORT=3001
-   MQTT_BROKER=mqtt://broker.hivemq.com:1883
+   DATABASE_URL=postgresql://postgres:password@localhost:5432/siloguard
+   ```
+
+#### **Opsi B: Supabase Postgres Terkelola (Cloud Realtime)**
+Cocok untuk pemantauan multi-cabang berbasis cloud:
+1. Buat proyek baru di [supabase.com](https://supabase.com/).
+2. Buka menu **SQL Editor**, salin dan jalankan isi `supabase/migrations/001_init.sql`.
+3. Buka **Project Settings -> API**, salin `Project URL` dan `service_role key` / `anon key`.
+4. Set variabel di `backend/.env`:
+   ```ini
    SUPABASE_URL=https://xxxxxxxxxxxx.supabase.co
    SUPABASE_SERVICE_ROLE_KEY=eyJh......
    SUPABASE_ANON_KEY=eyJh......
    ```
-   > **Graceful Degradation Note:** Jika Anda belum memiliki akun Supabase, biarkan `.env` kosong. Backend otomatis berjalan menggunakan **Mode In-Memory Store & SSE Streaming**, sehingga 100% fitur tetap dapat diuji secara langsung!
+
+#### **Opsi C: Zero-Config In-Memory Store (Tanpa Database)**
+> **Graceful Degradation:** Jika `DATABASE_URL` dan `SUPABASE_URL` tidak diisi (dikosongkan), backend otomatis berjalan dalam **Mode In-Memory Store & SSE Streaming**. Seluruh fitur pemantauan, grafik riwayat, dan otomasi kipas tetap dapat diuji 100% tanpa perlu menginstal database apa pun!
 
 ---
 
 ### 3. Menjalankan Backend & Dashboard
 
-Buka dua jendela terminal di direktori proyek:
+Anda dapat menjalankannya langsung dari root monorepo atau masuk ke masing-masing folder:
+
+#### **Cara 1 — Dari Root Monorepo:**
+Buka dua jendela terminal di direktori root `silo-guard/`:
 
 **Terminal 1 — Backend:**
 ```bash
-cd backend
-npm install
-npm start
+npm run dev:backend
 ```
-*Backend akan berjalan di `http://localhost:3001`.*
+*Backend berjalan di `http://localhost:3001`.*
 
-**Terminal 2 — Dashboard Web:**
+**Terminal 2 — Dashboard:**
 ```bash
-cd dashboard
-npm install
-npm run dev
+npm run dev:dashboard
 ```
 *Buka browser di `http://localhost:5173/`.*
+
+#### **Cara 2 — Dari Subdirektori Masing-Masing:**
+```bash
+# Terminal 1: Backend
+cd backend && npm install && npm start
+
+# Terminal 2: Dashboard
+cd dashboard && npm install && npm run dev
+```
 
 ---
 
 ### 4. Menjalankan Simulasi Firmware Wokwi (ESP32 Virtual)
 
+Untuk mensimulasikan sensor dan mikrokontroler fisik:
 1. Kunjungi [Wokwi ESP32](https://wokwi.com/).
 2. Buat proyek baru **ESP32 DevKit v1**.
-3. Salin:
-   - Isi `firmware/wokwi/sketch.ino` ke tab kode utama.
+3. Salin berkas:
+   - Isi `firmware/wokwi/sketch.ino` ke tab editor kode utama.
    - Isi `firmware/wokwi/diagram.json` ke tab diagram.
    - Tambahkan library di tab `libraries.txt`: `DHT sensor library`, `PubSubClient`, `ArduinoJson`.
 4. Tekan tombol **Start Simulation (Play)**.
-5. Amati telemetri terkirim di Serial Monitor Wokwi dan data langsung muncul di Dashboard Web dalam waktu < 2 detik!
+5. Telemetri akan otomatis dipublish tiap 5 detik ke broker HiveMQ dan diterima oleh backend secara instan!
+
+> 📘 **Panduan Lengkap Wokwi:** Untuk diagram pengkabelan pin, detail format payload MQTT, dan panduan troubleshooting, silakan baca [docs/WOKWI_CONNECTION.md](file:///c:/Users/user/repos/silo-guard/docs/WOKWI_CONNECTION.md).
 
 ---
 
 ## Skenario Demonstrasi 3 Menit
 
-Untuk mendemonstrasikan sistem end-to-end secara cepat tanpa perlu membuka Wokwi:
+Untuk mendemonstrasikan sistem end-to-end secara otomatis tanpa perlu membuka simulator Wokwi:
 
-Jalankan skrip simulator 4-fase di terminal ketiga:
+Jalankan skrip simulator 4-fase di terminal:
 ```bash
-# Jalankan simulator via jalur MQTT
-node scripts/simulate.js
+# Jalankan via root shortcut (MQTT)
+npm run simulate
 
 # Atau via jalur alternatif HTTP POST
-node scripts/simulate.js --http
+npm run simulate:http
 ```
 
 ### Alur Skenario:
@@ -224,12 +263,12 @@ node scripts/simulate.js --http
 3. **Menit 1:45 – Fase 3 (Bahaya Pembusukan):**
    - Suhu > 32°C dan Gas > 700 ppm (simulasi lonjakan fermentasi tumpukan).
    - Status berubah menjadi **Bahaya Pembusukan** (Merah).
-   - Estimasi susut melonjak di panel ekonomi, menunjukkan potensi kerugian puluhan/ratusan ribu Rupiah.
-   - Kipas bekerja penuh, nilai *"Kerugian yang Berhasil Dicegah"* bertambah.
+   - Estimasi susut melonjak di panel ekonomi, menunjukkan potensi kerugian finansial.
+   - Kipas bekerja penuh, nilai *"Kerugian yang Berhasil Dicegah"* bertambah seiring waktu respon.
 4. **Menit 2:30 – Fase 4 (Pemulihan & Histeresis):**
    - Pembacaan sensor kembali normal (Kelembapan 64%, Gas 260 ppm).
    - Kipas **TIDAK langsung mati mendadak** (menjalankan histeresis 3 siklus stabil aman untuk menjaga motor dan memastikan uap benar-benar keluar).
-   - Setelah 3 siklus stabil, kipas mati otomatis dan notifikasi *"Alhamdulillah, hawa leuit geus balik deui tengtrem"* tercatat.
+   - Setelah 3 siklus stabil, kipas mati otomatis dan tercatat notifikasi pemulihan.
 
 ---
 
@@ -238,8 +277,11 @@ node scripts/simulate.js --http
 Untuk menguji algoritma deteksi anomali, histeresis kipas, dan formula susut ekonomi:
 
 ```bash
-cd backend
-npm test
+# Dari root monorepo
+npm run test:backend
+
+# Atau langsung di folder backend
+cd backend && npm test
 ```
 
 Semua pengujian berjalan secara native menggunakan Node test runner:
@@ -252,4 +294,5 @@ Semua pengujian berjalan secara native menggunakan Node test runner:
 ## Kebijakan Kearifan Lokal & Batasan
 
 - **Istilah Adat Berstatus Placeholder:** Istilah seperti *Leuit, Gedhong Pantun, Kudu Taliti, Rahayu* diambil dari tinjauan pustaka etno-agronomi dan **wajib divalidasi oleh pemangku adat/PPL setempat** sebelum implementasi nyata di lapangan.
-- **Model Simulasi:** Angka susut persentase dan Rupiah merupakan simulasi matematis indikatif untuk *early warning*, bukan timbangan riil laboratorium. Baca selengkapnya di `docs/LIMITATIONS.md` dan `docs/ASSUMPTIONS.md`.
+- **Model Simulasi:** Angka susut persentase dan Rupiah merupakan simulasi matematis empiris untuk *early warning*, bukan timbangan riil laboratorium. Baca selengkapnya di [docs/LIMITATIONS.md](file:///c:/Users/user/repos/silo-guard/docs/LIMITATIONS.md) dan [docs/ASSUMPTIONS.md](file:///c:/Users/user/repos/silo-guard/docs/ASSUMPTIONS.md).
+

@@ -65,6 +65,29 @@ export async function setFanState(siloId, fanState) {
 }
 
 /**
+ * Kontrol manual kipas dengan durasi kunci (menit).
+ * duration = null => permanen sampai dilepas eksplisit.
+ */
+export async function setFanStateWithDuration(siloId, fanState, duration = 60) {
+  const res = await fetch(`${API_BASE}/api/silos/${siloId}/fan`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fan: fanState, duration })
+  });
+  return res.json();
+}
+
+/**
+ * Lepaskan mode manual — kembalikan otomasi.
+ */
+export async function releaseFanManual(siloId) {
+  const res = await fetch(`${API_BASE}/api/silos/${siloId}/fan/manual`, {
+    method: 'DELETE'
+  });
+  return res.json();
+}
+
+/**
  * Berlangganan Event Realtime
  * Menggunakan SSE (Server-Sent Events) dari backend yang selalu bekerja secara lokal,
  * serta Supabase Realtime Channel jika akun Supabase aktif.

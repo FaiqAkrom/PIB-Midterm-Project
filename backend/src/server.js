@@ -72,6 +72,7 @@ const telemetrySchema = z.object({
   humidity: z.coerce.number().min(0).max(100, 'Kelembapan harus di antara 0 sampai 100%'),
   gas: z.coerce.number().min(0).max(5000, 'Gas ppm harus valid'),
   fan: z.boolean().optional(),
+  sensor_ok: z.boolean().optional().default(true),  // false = DHT22 gagal, data fallback
   ts: z.coerce.number().optional()
 });
 
@@ -84,7 +85,12 @@ export async function processTelemetryIngestion(payload) {
     throw new Error(`Data telemetri tidak valid: ${parsed.error.issues.map(i => i.message).join(', ')}`);
   }
 
-  const { silo_id, temp, humidity, gas, fan } = parsed.data;
+  const { silo_id, temp, humidity, gas, fan, sensor_ok } = parsed.data;
+
+  // Peringatan log jika sensor bermasalah
+  if (sensor_ok === false) {
+    console.warn(`[SENSOR FAULT] ${silo_id}: DHT22 gagal baca — data suhu/kelembapan adalah nilai fallback!`);
+  }
 
   // 1. Simpan Telemetri ke Database
   const savedTelemetry = await saveTelemetry({
@@ -92,7 +98,8 @@ export async function processTelemetryIngestion(payload) {
     temp,
     humidity,
     gas,
-    fan_on: fan ?? false
+    fan_on: fan ?? false,
+    sensor_ok: sensor_ok ?? true
   });
 
   // 2. Ambil riwayat telemetri singkat untuk deteksi tren 5 menit terakhir
@@ -106,10 +113,16 @@ export async function processTelemetryIngestion(payload) {
   const currentLevel = determineRiskLevel(temp, humidity, gas, trend, riskScore);
 
   // 5. Evaluasi Otomasi Kipas (Histeresis)
+  // publishFanCommand dibuat non-blocking: tidak await agar broker putus tidak menghambat pipeline
+  const fanPublishFn = (sId, state) => {
+    mqttService.publishFanCommand(sId, state).catch((err) =>
+      console.error(`[FAN PUBLISH ERROR] Gagal publish ke ${sId}:`, err.message)
+    );
+  };
   const fanResult = await fanController.evaluateAutomation(
     silo_id,
     currentLevel,
-    (sId, state) => mqttService.publishFanCommand(sId, state),
+    fanPublishFn,
     (sId, aksi, penyebab) => saveFanEvent({ silo_id: sId, aksi, penyebab })
   );
 
@@ -252,23 +265,46 @@ app.get('/api/silos/:id/economics', async (req, res) => {
 });
 
 // POST /api/silos/:id/fan — Kontrol manual kipas dari dashboard
+// Body: { fan: boolean, duration?: number (menit, null = permanen) }
 app.post('/api/silos/:id/fan', async (req, res) => {
   try {
     const { id } = req.params;
-    const { fan } = req.body;
+    const { fan, duration } = req.body;
 
     if (typeof fan !== 'boolean') {
       return res.status(400).json({ success: false, error: 'Field `fan` harus berupa boolean (true/false)' });
     }
 
+    // duration: undefined => default 60 menit, null => permanen, angka => N menit
+    const durationMinutes = duration === undefined ? 60 : (duration === null ? null : Number(duration));
+
+    // MQTT publish non-blocking agar REST response tidak tertahan jika broker putus
+    const fanPublishFn = (sId, state) => {
+      mqttService.publishFanCommand(sId, state).catch((err) =>
+        console.error(`[FAN PUBLISH ERROR] Gagal publish ke ${sId}:`, err.message)
+      );
+    };
+
     const result = await fanController.setManualFan(
       id,
       fan,
-      (sId, state) => mqttService.publishFanCommand(sId, state),
-      (sId, aksi, penyebab) => saveFanEvent({ silo_id: sId, aksi, penyebab })
+      fanPublishFn,
+      (sId, aksi, penyebab) => saveFanEvent({ silo_id: sId, aksi, penyebab }),
+      durationMinutes
     );
 
     res.json({ success: true, message: `Kipas berhasil diubah ke: ${fan ? 'ON' : 'OFF'}`, data: result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// DELETE /api/silos/:id/fan/manual — Lepas mode manual, kembalikan ke otomasi
+app.delete('/api/silos/:id/fan/manual', (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = fanController.releaseManualOverride(id);
+    res.json({ success: true, message: `Mode manual ${id} dilepas. Otomasi aktif kembali.`, data: result });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

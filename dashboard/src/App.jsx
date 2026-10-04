@@ -12,6 +12,8 @@ import {
   fetchLocaleData,
   updateCultureProfile,
   setFanState,
+  setFanStateWithDuration,
+  releaseFanManual,
   subscribeRealtimeEvents
 } from './services/api';
 
@@ -35,6 +37,8 @@ export default function App() {
   const [currentGas, setCurrentGas] = useState(18);
   const [fanOn, setFanOn] = useState(false);
   const [isFanManual, setIsFanManual] = useState(false);
+  const [manualOverrideExpiresAt, setManualOverrideExpiresAt] = useState(null); // epoch ms
+  const [sensorOk, setSensorOk] = useState(true); // false = DHT22 bermasalah
 
   // Alerts & Economics
   const [alerts, setAlerts] = useState([]);
@@ -100,6 +104,7 @@ export default function App() {
           const rawGas = Number(latest.gas) || 18;
           setCurrentGas(rawGas > 150 ? Math.round(rawGas / 10) : rawGas);
           setFanOn(Boolean(latest.fan_on));
+          setSensorOk(latest.sensor_ok !== false); // undefined => true (sensor lama tanpa field)
         }
 
         if (alertsRes?.data) setAlerts(alertsRes.data);
@@ -127,6 +132,7 @@ export default function App() {
           setCurrentHum(h);
           setCurrentGas(g);
           setFanOn(Boolean(data.fan_on ?? data.fan));
+          setSensorOk(data.sensor_ok !== false);
           setTelemetryHistory(prev => [data, ...prev.slice(0, 39)]);
         }
       },
@@ -181,18 +187,33 @@ export default function App() {
   const selectedSilo = silos.find(s => s.id === selectedSiloId) || silos[0];
   const stokKg = selectedSilo?.stok_kg || 5000;
 
-  // Toggle Fan / Watering
+  // Toggle Fan — mode manual 60 menit
   const handleToggleFan = async () => {
     const nextState = !fanOn;
     setIsFanManual(true);
     setFanOn(nextState);
 
-    showToast(nextState ? '💨 Sirkulasi Blower / Ventilasi dinyalakan' : '⏹️ Sirkulasi Blower dimatikan');
+    showToast(nextState ? '💨 Kipas dinyalakan manual (60 mnt)' : '⏹️ Kipas dimatikan manual (60 mnt)');
 
     try {
-      await setFanState(selectedSiloId, nextState);
+      const result = await setFanStateWithDuration(selectedSiloId, nextState, 60);
+      if (result?.data?.manualOverrideExpiresAt) {
+        setManualOverrideExpiresAt(result.data.manualOverrideExpiresAt);
+      }
     } catch (e) {
       console.warn('Gagal sinkron status kipas:', e.message);
+    }
+  };
+
+  // Lepas mode manual — kembalikan kendali ke otomasi
+  const handleReleaseManual = async () => {
+    setIsFanManual(false);
+    setManualOverrideExpiresAt(null);
+    showToast('🔄 Kipas dikembalikan ke mode otomatis');
+    try {
+      await releaseFanManual(selectedSiloId);
+    } catch (e) {
+      console.warn('Gagal lepas mode manual:', e.message);
     }
   };
 
@@ -354,7 +375,19 @@ export default function App() {
 
       {/* ================= DASHBOARD MAIN CONTENT ================= */}
       <main className="flex-1 flex flex-col gap-5 overflow-hidden">
+
+        {/* SENSOR FAULT BANNER — muncul jika DHT22 gagal baca */}
+        {!sensorOk && (
+          <div className="flex items-center gap-3 bg-red-50 border border-red-300 text-red-700 rounded-2xl px-4 py-2.5 text-xs font-semibold shadow-sm animate-pulse">
+            <span className="text-base">⚠️</span>
+            <span>
+              <strong>Sensor Bermasalah!</strong> DHT22 gagal membaca — data suhu &amp; kelembapan saat ini adalah nilai fallback dan tidak dapat diandalkan. Periksa kabel sensor dan koneksi perangkat.
+            </span>
+          </div>
+        )}
+
         {/* HEADER */}
+
         <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           {/* Title & Sub-controls */}
           <div className="flex items-center gap-4">
@@ -578,32 +611,47 @@ export default function App() {
                 {/* Tasks list right side */}
                 <div className="sm:col-span-7 flex flex-col gap-3">
                   {/* Task 1 (Blower Control) */}
-                  <div
-                    onClick={handleToggleFan}
-                    className="glass-card p-4 flex items-center justify-between hover:bg-white/90 transition shadow-sm cursor-pointer group"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
-                        fanOn ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-500'
+                  <div className="flex flex-col gap-1.5">
+                    <div
+                      onClick={handleToggleFan}
+                      className="glass-card p-4 flex items-center justify-between hover:bg-white/90 transition shadow-sm cursor-pointer group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
+                          fanOn ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-500'
+                        }`}>
+                          <svg className={`w-5 h-5 fill-current ${fanOn ? 'fan-running' : ''}`} viewBox="0 0 24 24">
+                            <path d="M12 2C9.5 2 7.5 3.5 7 5.5c-2.5.5-4.5 2.5-4.5 5.5 0 5.5 5 11 9.5 11s9.5-5.5 9.5-11c0-3-2-5-4.5-5.5-.5-2-2.5-3.5-5-3.5zm0 2c1.7 0 3 1.2 3.4 2.8-.7.2-1.5.5-2.2.9-.6-.6-1.5-1-2.4-1-.3 0-.6.1-.8.2C10.4 5.2 11.1 4 12 4z" />
+                          </svg>
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-bold text-slate-900 leading-tight">
+                            {fanOn ? 'Ventilation Blower' : 'Standby Blower'}
+                          </h3>
+                          <p className="text-xs text-slate-500 font-medium mt-0.5">
+                            {fanOn
+                              ? isFanManual
+                                ? `Manual – Kunci ${manualOverrideExpiresAt ? Math.max(0, Math.ceil((manualOverrideExpiresAt - Date.now()) / 60000)) + ' mnt' : 'aktif'}`
+                                : 'Automatic Running'
+                              : isFanManual ? 'Manual OFF – Kunci aktif' : 'Idle Standby'}
+                          </p>
+                        </div>
+                      </div>
+                      <span className={`px-2.5 py-1 text-[11px] font-bold rounded-full transition ${
+                        fanOn ? 'bg-[#B5EA3A] text-slate-900' : 'bg-slate-200 text-slate-600'
                       }`}>
-                        <svg className={`w-5 h-5 fill-current ${fanOn ? 'fan-running' : ''}`} viewBox="0 0 24 24">
-                          <path d="M12 2C9.5 2 7.5 3.5 7 5.5c-2.5.5-4.5 2.5-4.5 5.5 0 5.5 5 11 9.5 11s9.5-5.5 9.5-11c0-3-2-5-4.5-5.5-.5-2-2.5-3.5-5-3.5zm0 2c1.7 0 3 1.2 3.4 2.8-.7.2-1.5.5-2.2.9-.6-.6-1.5-1-2.4-1-.3 0-.6.1-.8.2C10.4 5.2 11.1 4 12 4z" />
-                        </svg>
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-bold text-slate-900 leading-tight">
-                          {fanOn ? 'Ventilation Blower' : 'Standby Blower'}
-                        </h3>
-                        <p className="text-xs text-slate-500 font-medium mt-0.5">
-                          {fanOn ? (isFanManual ? 'Manual Active' : 'Automatic Running') : 'Idle Standby'}
-                        </p>
-                      </div>
+                        {fanOn ? 'In progress' : 'Idle'}
+                      </span>
                     </div>
-                    <span className={`px-2.5 py-1 text-[11px] font-bold rounded-full transition ${
-                      fanOn ? 'bg-[#B5EA3A] text-slate-900' : 'bg-slate-200 text-slate-600'
-                    }`}>
-                      {fanOn ? 'In progress' : 'Idle'}
-                    </span>
+                    {/* Tombol Lepas Manual — muncul saat mode manual aktif */}
+                    {isFanManual && (
+                      <button
+                        onClick={handleReleaseManual}
+                        className="w-full text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl py-1.5 transition"
+                      >
+                        🔄 Lepas Manual — Kembalikan ke Otomasi
+                      </button>
+                    )}
                   </div>
 
                   {/* Task 2 */}

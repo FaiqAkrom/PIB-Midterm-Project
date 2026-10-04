@@ -31,6 +31,7 @@ WiFiClient espClient;
 PubSubClient mqttClient(espClient);
 
 bool fanState = false;
+bool sensorOk = true;   // false jika DHT22 gagal dibaca
 unsigned long lastTelemetryMillis = 0;
 const unsigned long TELEMETRY_INTERVAL_MS = 5000;
 
@@ -133,11 +134,16 @@ void checkMqttConnection() {
 }
 
 // ================= PEMBACAAN SENSOR =================
+/**
+ * Membaca suhu dari DHT22.
+ * Mengembalikan nilai terakhir yang valid (atau fallback) dan mengatur sensorOk.
+ */
 float readTemperature() {
   float t = dht.readTemperature();
   if (isnan(t)) {
-    Serial.println("[SENSOR WARN] Gagal membaca suhu dari DHT22! Menggunakan fallback.");
-    return 27.0;
+    Serial.println("[SENSOR WARN] Gagal membaca suhu dari DHT22!");
+    sensorOk = false;
+    return 27.0; // nilai fallback — ditandai oleh sensor_ok:false di payload
   }
   return t;
 }
@@ -145,8 +151,9 @@ float readTemperature() {
 float readHumidity() {
   float h = dht.readHumidity();
   if (isnan(h)) {
-    Serial.println("[SENSOR WARN] Gagal membaca kelembapan dari DHT22! Menggunakan fallback.");
-    return 65.0;
+    Serial.println("[SENSOR WARN] Gagal membaca kelembapan dari DHT22!");
+    sensorOk = false;
+    return 65.0; // nilai fallback — ditandai oleh sensor_ok:false di payload
   }
   return h;
 }
@@ -205,19 +212,22 @@ void loop() {
   if (currentMillis - lastTelemetryMillis >= TELEMETRY_INTERVAL_MS) {
     lastTelemetryMillis = currentMillis;
 
+    // Reset sensorOk setiap siklus; fungsi baca akan set false jika sensor gagal
+    sensorOk = true;
     float temperature = readTemperature();
     float humidity    = readHumidity();
     int gasPpm        = readGasPpm();
     unsigned long ts  = getEpochTime();
 
-    // Buat payload JSON sesuai spesifikasi
-    // {"silo_id":"silo-01","temp":28.4,"humidity":72.1,"gas":340,"fan":false,"ts":<epoch>}
+    // Buat payload JSON sesuai spesifikasi (sensor_ok ditambahkan untuk deteksi kerusakan)
+    // {"silo_id":"silo-01","temp":28.4,"humidity":72.1,"gas":340,"fan":false,"sensor_ok":true,"ts":<epoch>}
     StaticJsonDocument<256> doc;
     doc["silo_id"] = SILO_ID;
     doc["temp"] = serialized(String(temperature, 1));
     doc["humidity"] = serialized(String(humidity, 1));
     doc["gas"] = gasPpm;
     doc["fan"] = fanState;
+    doc["sensor_ok"] = sensorOk;
     doc["ts"] = ts;
 
     char buffer[256];

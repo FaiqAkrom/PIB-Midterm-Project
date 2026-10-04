@@ -145,6 +145,9 @@ export default function TrendsChart({ telemetryHistory = [], onRangeChange, curr
                 {(activeMetric === 'all' || activeMetric === 'humidity') && (
                   <ReferenceLine y={70} stroke="#E29E1B" strokeDasharray="3 3" label={{ value: 'Batas RH 70%', fill: '#E29E1B', fontSize: 10, position: 'insideTopLeft' }} />
                 )}
+                {(activeMetric === 'all' || activeMetric === 'gas') && (
+                  <ReferenceLine y={400} stroke="#DE4A4A" strokeDasharray="4 2" label={{ value: 'Batas Gas 400 ppm', fill: '#DE4A4A', fontSize: 10, position: 'insideTopRight' }} />
+                )}
 
                 {/* Garis Suhu */}
                 {(activeMetric === 'all' || activeMetric === 'temp') && (
@@ -197,7 +200,7 @@ export default function TrendsChart({ telemetryHistory = [], onRangeChange, curr
         </span>
         <span className="flex items-center gap-1.5">
           <span className="w-2 h-2 rounded-full bg-statusDanger" />
-          Ambang Waspada Kipas: RH &gt; 70% atau Gas &gt; 35 PPM
+          Ambang Waspada Kipas: RH &gt; 70% atau Gas &gt; 400 PPM
         </span>
       </div>
     </div>

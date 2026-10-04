@@ -4,9 +4,22 @@
 
 import { THRESHOLDS } from '../config/thresholds.js';
 
+// Durasi default kunci manual (menit)
+const DEFAULT_MANUAL_OVERRIDE_MINUTES = 60;
+
 class FanController {
   constructor() {
-    // Menyimpan status per silo: { [siloId]: { fanOn: boolean, safeCount: number, manualOverride: boolean, exposureMinutes: number } }
+    /**
+     * Status per silo:
+     * {
+     *   fanOn: boolean,
+     *   safeCount: number,
+     *   manualOverride: boolean,
+     *   manualOverrideExpiresAt: number|null,  // epoch ms, null = permanen sampai dilepas
+     *   cumulativeExposureMinutes: number,      // TOTAL paparan kondisi buruk sepanjang hari
+     *   lastEvaluatedAt: number
+     * }
+     */
     this.silos = new Map();
   }
 
@@ -16,7 +29,8 @@ class FanController {
         fanOn: false,
         safeCount: 0,
         manualOverride: false,
-        exposureMinutes: 0,
+        manualOverrideExpiresAt: null,
+        cumulativeExposureMinutes: 0,
         lastEvaluatedAt: Date.now()
       });
     }
@@ -24,11 +38,27 @@ class FanController {
   }
 
   /**
-   * Evaluasi otomasi kipas dengan histeresis
-   * @param {string} siloId 
+   * Apakah mode manual sedang aktif (belum kedaluwarsa)?
+   */
+  isManualActive(state) {
+    if (!state.manualOverride) return false;
+    if (state.manualOverrideExpiresAt === null) return true; // permanen
+    if (Date.now() < state.manualOverrideExpiresAt) return true;
+    // Kadaluwarsa — lepas override secara otomatis
+    state.manualOverride = false;
+    state.manualOverrideExpiresAt = null;
+    console.log('[FAN AUTO] Mode manual telah kedaluwarsa, otomasi diaktifkan kembali.');
+    return false;
+  }
+
+  /**
+   * Evaluasi otomasi kipas dengan histeresis.
+   * Dilewati seluruhnya saat mode manual aktif.
+   *
+   * @param {string} siloId
    * @param {string} riskLevel ('aman' | 'waspada' | 'bahaya')
    * @param {Function} publishCommandFn (siloId, boolean) => Promise<void>
-   * @param {Function} recordEventFn (siloId, 'ON'|'OFF', 'otomatis'|'manual') => Promise<void>
+   * @param {Function} recordEventFn   (siloId, 'ON'|'OFF', 'otomatis'|'manual') => Promise<void>
    */
   async evaluateAutomation(siloId, riskLevel, publishCommandFn, recordEventFn) {
     const state = this.getSiloState(siloId);
@@ -36,14 +66,27 @@ class FanController {
     const elapsedMinutes = (now - state.lastEvaluatedAt) / 60000;
     state.lastEvaluatedAt = now;
 
-    // Hitung akumulasi menit paparan
+    // --- Akumulasi paparan KUMULATIF (hanya bertambah, tidak pernah berkurang) ---
     if (riskLevel === 'waspada' || riskLevel === 'bahaya') {
-      state.exposureMinutes += Math.max(0.08, elapsedMinutes); // minimal 5 detik ~ 0.083 menit
-    } else if (riskLevel === 'aman' && state.exposureMinutes > 0) {
-      // Pelan-pelan pulih jika aman
-      state.exposureMinutes = Math.max(0, state.exposureMinutes - (elapsedMinutes * 0.5));
+      state.cumulativeExposureMinutes += Math.max(0.08, elapsedMinutes);
+    }
+    // Jika kondisi aman, paparan tetap tersimpan (kerugian sudah terjadi)
+
+    // --- Blokir otomasi selama mode manual aktif ---
+    if (this.isManualActive(state)) {
+      const expiresIn = state.manualOverrideExpiresAt
+        ? Math.ceil((state.manualOverrideExpiresAt - Date.now()) / 60000)
+        : null;
+      console.log(`[FAN MANUAL] Otomasi diblokir untuk ${siloId}. Sisa kunci: ${expiresIn !== null ? expiresIn + ' menit' : 'permanen'}`);
+      return {
+        fanOn: state.fanOn,
+        exposureMinutes: Number(state.cumulativeExposureMinutes.toFixed(1)),
+        manualOverride: true,
+        manualOverrideExpiresAt: state.manualOverrideExpiresAt
+      };
     }
 
+    // --- Logika Otomasi + Histeresis ---
     if (riskLevel === 'waspada' || riskLevel === 'bahaya') {
       state.safeCount = 0;
 
@@ -72,33 +115,65 @@ class FanController {
 
     return {
       fanOn: state.fanOn,
-      exposureMinutes: Number(state.exposureMinutes.toFixed(1))
+      exposureMinutes: Number(state.cumulativeExposureMinutes.toFixed(1)),
+      manualOverride: false,
+      manualOverrideExpiresAt: null
     };
   }
 
   /**
-   * Perintah kontrol manual dari pengguna (Dashboard)
+   * Perintah kontrol manual dari dashboard.
+   *
+   * @param {string}   siloId
+   * @param {boolean}  targetState       - true = ON, false = OFF
+   * @param {Function} publishCommandFn
+   * @param {Function} recordEventFn
+   * @param {number|null} durationMinutes - berapa menit kunci manual berlaku
+   *                                        (null = permanen sampai dilepas eksplisit)
    */
-  async setManualFan(siloId, targetState, publishCommandFn, recordEventFn) {
+  async setManualFan(siloId, targetState, publishCommandFn, recordEventFn, durationMinutes = DEFAULT_MANUAL_OVERRIDE_MINUTES) {
     const state = this.getSiloState(siloId);
     state.fanOn = Boolean(targetState);
     state.safeCount = 0;
     state.manualOverride = true;
+    state.manualOverrideExpiresAt = durationMinutes !== null
+      ? Date.now() + durationMinutes * 60 * 1000
+      : null;
 
-    console.log(`[FAN MANUAL] Perintah manual diterima: Kipas ${siloId} -> ${targetState ? 'ON' : 'OFF'}`);
+    const expiresLabel = durationMinutes !== null
+      ? `selama ${durationMinutes} menit (sampai ${new Date(state.manualOverrideExpiresAt).toLocaleTimeString('id-ID')})`
+      : 'permanen (sampai dilepas)';
+    console.log(`[FAN MANUAL] Perintah manual: Kipas ${siloId} -> ${targetState ? 'ON' : 'OFF'}, kunci ${expiresLabel}`);
+
     if (publishCommandFn) await publishCommandFn(siloId, targetState);
     if (recordEventFn) await recordEventFn(siloId, targetState ? 'ON' : 'OFF', 'manual');
 
     return {
       siloId,
       fanOn: state.fanOn,
-      mode: 'manual'
+      mode: 'manual',
+      manualOverride: true,
+      manualOverrideExpiresAt: state.manualOverrideExpiresAt
     };
+  }
+
+  /**
+   * Lepaskan mode manual — kembalikan kendali ke otomasi.
+   */
+  releaseManualOverride(siloId) {
+    const state = this.getSiloState(siloId);
+    state.manualOverride = false;
+    state.manualOverrideExpiresAt = null;
+    console.log(`[FAN AUTO] Mode manual untuk ${siloId} dilepas. Otomasi aktif kembali.`);
+    return { siloId, manualOverride: false };
   }
 
   syncHardwareStatus(siloId, hardwareFanOn) {
     const state = this.getSiloState(siloId);
-    state.fanOn = hardwareFanOn;
+    // Jangan timpa state jika mode manual sedang aktif
+    if (!this.isManualActive(state)) {
+      state.fanOn = hardwareFanOn;
+    }
   }
 }
 

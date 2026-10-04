@@ -157,7 +157,7 @@ export function generateAlertMessages(level, details, cultureProfile = 'sunda') 
   if (level === 'bahaya') {
     if (humidity > THRESHOLDS.humidity.dangerMax && temp > THRESHOLDS.temperature.dangerMax) {
       jenis = 'bahaya_kombinasi_panas_lembab';
-      pesanTeknis = `Kombinasi Kritis! Suhu ${temp}°C (>32°C) dan Kelembapan ${humidity}% (>75%) memicu percepatan pembusukan!`;
+      pesanTeknis = `Kombinasi Kritis! Suhu ${temp}°C (>${THRESHOLDS.temperature.dangerMax}°C) dan Kelembapan ${humidity}% (>${THRESHOLDS.humidity.dangerMax}%) memicu percepatan pembusukan!`;
       pesanLokal = profile?.alerts?.combined_danger || 'Bahaya rangkep! Hawa panas jeung beueus ngancam pare!';
     } else if (gas >= THRESHOLDS.gas.dangerThreshold) {
       jenis = 'bahaya_gas_pembusukan';

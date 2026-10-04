@@ -179,13 +179,14 @@ export async function getSiloById(id) {
   return memoryStore.silos.find(s => s.id === id) || memoryStore.silos[0];
 }
 
-export async function saveTelemetry({ silo_id, temp, humidity, gas, fan_on }) {
+export async function saveTelemetry({ silo_id, temp, humidity, gas, fan_on, sensor_ok = true }) {
   const record = {
     silo_id,
     temp: Number(temp),
     humidity: Number(humidity),
     gas: Number(gas),
     fan_on: Boolean(fan_on),
+    sensor_ok: Boolean(sensor_ok),
     created_at: new Date().toISOString()
   };
 
@@ -195,15 +196,22 @@ export async function saveTelemetry({ silo_id, temp, humidity, gas, fan_on }) {
   if (memoryStore.telemetry.length > 300) memoryStore.telemetry.pop();
 
   // PostgreSQL lokal
+  // Kolom sensor_ok di DB bersifat opsional — fallback ke INSERT tanpa kolom itu jika belum migrasi
   const rows = await pgQuery(
+    `INSERT INTO telemetry (silo_id, temp, humidity, gas, fan_on, sensor_ok)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING *`,
+    [silo_id, temp, humidity, gas, fan_on, sensor_ok]
+  ) ?? await pgQuery(
     `INSERT INTO telemetry (silo_id, temp, humidity, gas, fan_on)
      VALUES ($1, $2, $3, $4, $5)
      RETURNING *`,
     [silo_id, temp, humidity, gas, fan_on]
   );
   if (rows && rows[0]) {
-    dataEvents.emit('telemetry', rows[0]);
-    return rows[0];
+    const emitted = { ...rows[0], sensor_ok: Boolean(sensor_ok) };
+    dataEvents.emit('telemetry', emitted);
+    return emitted;
   }
 
   // Supabase

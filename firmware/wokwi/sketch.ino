@@ -32,6 +32,11 @@ PubSubClient mqttClient(espClient);
 
 bool fanState = false;
 bool sensorOk = true;   // false jika DHT22 gagal dibaca
+float lastValidTemp = 28.0;
+float lastValidHumidity = 65.0;
+int consecutiveDhtErrors = 0;
+const int MAX_DHT_ERRORS = 3; // Toleransi 3 kegagalan berturut-turut sebelum menandai sensor fault
+
 unsigned long lastTelemetryMillis = 0;
 const unsigned long TELEMETRY_INTERVAL_MS = 5000;
 
@@ -135,39 +140,40 @@ void checkMqttConnection() {
 
 // ================= PEMBACAAN SENSOR =================
 /**
- * Membaca suhu dari DHT22.
- * Mengembalikan nilai terakhir yang valid (atau fallback) dan mengatur sensorOk.
+ * Membaca suhu dan kelembapan dari DHT22 secara terintegrasi.
+ * Menggunakan toleransi MAX_DHT_ERRORS dan mempertahankan nilai valid terakhir
+ * agar jitter simulator Wokwi / mikrokontroler tidak menyebabkan alarm palsu.
  */
-float readTemperature() {
+void readDhtSensors(float &outTemp, float &outHum) {
   float t = dht.readTemperature();
-  if (isnan(t)) {
-    Serial.println("[SENSOR WARN] Gagal membaca suhu dari DHT22!");
-    sensorOk = false;
-    return 27.0; // nilai fallback — ditandai oleh sensor_ok:false di payload
-  }
-  return t;
-}
-
-float readHumidity() {
   float h = dht.readHumidity();
-  if (isnan(h)) {
-    Serial.println("[SENSOR WARN] Gagal membaca kelembapan dari DHT22!");
-    sensorOk = false;
-    return 65.0; // nilai fallback — ditandai oleh sensor_ok:false di payload
+
+  if (isnan(t) || isnan(h)) {
+    consecutiveDhtErrors++;
+    Serial.printf("[SENSOR WARN] Gagal membaca DHT22 (percobaan gagal: %d/%d)!\n", consecutiveDhtErrors, MAX_DHT_ERRORS);
+    if (consecutiveDhtErrors >= MAX_DHT_ERRORS) {
+      sensorOk = false;
+      outTemp = 27.0; // nilai fallback darurat jika sensor benar-benar putus/rusak
+      outHum = 65.0;
+    } else {
+      // Gunakan nilai valid sebelumnya; sensor belum dianggap rusak
+      sensorOk = true;
+      outTemp = lastValidTemp;
+      outHum = lastValidHumidity;
+    }
+  } else {
+    consecutiveDhtErrors = 0;
+    sensorOk = true;
+    lastValidTemp = t;
+    lastValidHumidity = h;
+    outTemp = t;
+    outHum = h;
   }
-  return h;
 }
 
 int readGasPpm() {
-  // Pembacaan analog 12-bit (0-4095) dari simulator/sensor gas MQ-2
+  // Pembacaan analog 12-bit (0-4095) dari simulator potensiometer MQ-2
   int rawAdc = analogRead(GAS_PIN);
-
-  // Deteksi kegagalan sensor gas: nilai batas ekstrim (terputus/korsleting ADC)
-  if (rawAdc < 10 || rawAdc > 4090) {
-    Serial.printf("[SENSOR WARN] Pembacaan ADC Gas abnormal (%d)! Sensor gas terputus atau rusak.\n", rawAdc);
-    sensorOk = false;
-    return 300; // nilai fallback
-  }
 
   // Konversi ke rentang perkiraan PPM gas indikator lumbung (100 - 1000 ppm)
   int gasPpm = map(rawAdc, 0, 4095, 100, 1000);
@@ -190,6 +196,7 @@ void setup() {
   pinMode(GAS_PIN, INPUT);
 
   dht.begin();
+  delay(1500); // Beri waktu stabilisasi komponen virtual DHT22
   
   connectWiFi();
 
@@ -220,10 +227,10 @@ void loop() {
   if (currentMillis - lastTelemetryMillis >= TELEMETRY_INTERVAL_MS) {
     lastTelemetryMillis = currentMillis;
 
-    // Reset sensorOk setiap siklus; fungsi baca akan set false jika sensor gagal
-    sensorOk = true;
-    float temperature = readTemperature();
-    float humidity    = readHumidity();
+    float temperature = 27.0;
+    float humidity = 65.0;
+    readDhtSensors(temperature, humidity);
+
     int gasPpm        = readGasPpm();
     unsigned long ts  = getEpochTime();
 

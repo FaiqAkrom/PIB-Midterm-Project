@@ -144,10 +144,10 @@ export function determineRiskLevel(temp, humidity, gas, trend = {}, riskScore = 
 /**
  * Menghasilkan Pesan Teknis dan Pesan Kearifan Lokal berdasarkan anomali
  */
-export function generateAlertMessages(level, details, cultureProfile = 'sunda') {
+export function generateAlertMessages(level, details, cultureProfile = 'indonesia') {
   const profile = (localWisdomData && localWisdomData.profiles && localWisdomData.profiles[cultureProfile]) 
     ? localWisdomData.profiles[cultureProfile] 
-    : (localWisdomData?.profiles?.sunda || null);
+    : (localWisdomData?.profiles?.indonesia || localWisdomData?.profiles?.indonesia_desa || localWisdomData?.profiles?.sunda || null);
 
   const { temp, humidity, gas, trend } = details;
   let jenis = 'kondisi_stabil';
@@ -158,33 +158,33 @@ export function generateAlertMessages(level, details, cultureProfile = 'sunda') 
     if (humidity > THRESHOLDS.humidity.dangerMax && temp > THRESHOLDS.temperature.dangerMax) {
       jenis = 'bahaya_kombinasi_panas_lembab';
       pesanTeknis = `Kombinasi Kritis! Suhu ${temp}°C (>${THRESHOLDS.temperature.dangerMax}°C) dan Kelembapan ${humidity}% (>${THRESHOLDS.humidity.dangerMax}%) memicu percepatan pembusukan!`;
-      pesanLokal = profile?.alerts?.combined_danger || 'Bahaya rangkep! Hawa panas jeung beueus ngancam pare!';
+      pesanLokal = profile?.alerts?.combined_danger || 'Bahaya ganda! Suhu tinggi dan sangat lembap memicu pembusukan gabah!';
     } else if (gas >= THRESHOLDS.gas.dangerThreshold) {
       jenis = 'bahaya_gas_pembusukan';
       pesanTeknis = `Gas pembusukan mencapai ${gas} ppm (ambang bahaya >= ${THRESHOLDS.gas.dangerThreshold} ppm). Fermentasi aktif!`;
-      pesanLokal = profile?.alerts?.gas_danger || 'Bau apek jeung gas pembusukan pekat! Buru pariksa leuit!';
+      pesanLokal = profile?.alerts?.gas_danger || 'Aroma apek dan konsentrasi gas pembusukan pekat! Segera periksa lumbung!';
     } else {
       jenis = 'bahaya_kelembapan_kritis';
       pesanTeknis = `Kelembapan sangat tinggi (${humidity}%). Spora jamur dapat berkembang biak dalam hitungan jam.`;
-      pesanLokal = profile?.alerts?.humidity_danger || 'Uap beueus luhur pisan di leuit! Kipas ventilasi hurung.';
+      pesanLokal = profile?.alerts?.humidity_danger || 'Kelembapan udara sangat tinggi di lumbung! Kipas ventilasi dinyalakan.';
     }
   } else if (level === 'waspada') {
     if (trend && trend.hasRapidTrend) {
       jenis = 'waspada_tren_kenaikan_cepat';
       pesanTeknis = `Deteksi tren: Kenaikan cepat terdeteksi (Gas: +${trend.gasSlopePerMin} ppm/mnt, RH: +${trend.humiditySlopePerMin}%/mnt).`;
-      pesanLokal = profile?.alerts?.rapid_trend || 'Hawa robah gancang dina 5 menit terakhir!';
+      pesanLokal = profile?.alerts?.rapid_trend || 'Kondisi mikroklimat berubah cepat dalam 5 menit terakhir!';
     } else if (humidity > THRESHOLDS.humidity.safeMax) {
       jenis = 'waspada_kelembapan_tinggi';
       pesanTeknis = `Kelembapan ${humidity}% melebihi ambang batas ideal (${THRESHOLDS.humidity.safeMax}%).`;
-      pesanLokal = profile?.alerts?.humidity_warning || 'Pare mimiti beueus, buka angin-angin leuit.';
+      pesanLokal = profile?.alerts?.humidity_warning || 'Gabah mulai lembap, segera buka ventilasi udara lumbung.';
     } else if (gas >= THRESHOLDS.gas.warningThreshold) {
       jenis = 'waspada_gas_respirasi';
       pesanTeknis = `Gas indikator lumbung mencapai ${gas} ppm (ambang waspada ${THRESHOLDS.gas.warningThreshold} ppm).`;
-      pesanLokal = profile?.alerts?.gas_warning || 'Kaciri aya hawa haseum tina pare, geura pariksa tumpukan.';
+      pesanLokal = profile?.alerts?.gas_warning || 'Tercium aroma apek samar dari gabah, periksa tumpukan.';
     } else {
       jenis = 'waspada_suhu_meningkat';
       pesanTeknis = `Suhu lumbung ${temp}°C melampaui batas rekomendasi sejuk (${THRESHOLDS.temperature.safeMax}°C).`;
-      pesanLokal = profile?.alerts?.temp_warning || 'Hawa leuit panas teuing, sirkulasi hawa kudu ditingkatkeun.';
+      pesanLokal = profile?.alerts?.temp_warning || 'Suhu lumbung meningkat hangat, sirkulasi udara perlu ditingkatkan.';
     }
   }
 

@@ -76,9 +76,10 @@ export default function Header({
               onChange={(e) => onChangeProfile(e.target.value)}
               className="bg-transparent text-xs sm:text-sm font-medium text-slate-200 focus:outline-none cursor-pointer"
             >
+              <option value="indonesia" className="bg-slate-900 text-white">Bahasa Indonesia (Standar)</option>
+              <option value="indonesia_desa" className="bg-slate-900 text-white">Bahasa Desa (Lugas)</option>
               <option value="sunda" className="bg-slate-900 text-white">Adat Sunda (Leuit)</option>
               <option value="jawa" className="bg-slate-900 text-white">Adat Jawa (Lumbung)</option>
-              <option value="indonesia_desa" className="bg-slate-900 text-white">Bahasa Desa (Lugas)</option>
             </select>
           </div>
 

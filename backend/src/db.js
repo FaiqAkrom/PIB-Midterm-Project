@@ -138,7 +138,7 @@ for (let i = 12; i >= 0; i--) {
  * Jalankan query ke PostgreSQL lokal.
  * Mengembalikan rows[] atau null jika koneksi belum siap.
  */
-async function pgQuery(text, params = []) {
+export async function pgQuery(text, params = []) {
   if (!pgPool) return null;
   try {
     const result = await pgPool.query(text, params);
@@ -334,6 +334,38 @@ export async function getAlerts({ silo_id, limit = 20 } = {}) {
   let list = memoryStore.alerts;
   if (silo_id) list = list.filter(a => a.silo_id === silo_id);
   return list.slice(0, Number(limit));
+}
+
+export async function resolveAlerts({ silo_id, jenis } = {}) {
+  // PostgreSQL lokal
+  if (silo_id && jenis) {
+    await pgQuery(
+      'UPDATE alerts SET resolved = true WHERE silo_id = $1 AND jenis = $2 AND resolved = false',
+      [silo_id, jenis]
+    );
+  } else if (silo_id) {
+    await pgQuery(
+      'UPDATE alerts SET resolved = true WHERE silo_id = $1 AND resolved = false',
+      [silo_id]
+    );
+  }
+
+  // Supabase
+  if (isSupabaseConfigured) {
+    try {
+      let q = supabase.from('alerts').update({ resolved: true }).eq('resolved', false);
+      if (silo_id) q = q.eq('silo_id', silo_id);
+      if (jenis) q = q.eq('jenis', jenis);
+      await q;
+    } catch (e) {}
+  }
+
+  // In-Memory
+  memoryStore.alerts.forEach(a => {
+    if ((!silo_id || a.silo_id === silo_id) && (!jenis || a.jenis === jenis)) {
+      a.resolved = true;
+    }
+  });
 }
 
 export async function saveFanEvent({ silo_id, aksi, penyebab }) {

@@ -3,11 +3,12 @@ import { BookOpen, AlertCircle, CalendarCheck } from 'lucide-react';
 
 export default function TraditionReminders({ profileData }) {
   const reminders = profileData?.cultural_reminders || [
-    'Mariksa leuit waktu isuk sangkan hawa heubeul ganti ku hawa anyar nu seger.',
-    'Ulah nutup rapet angin-angin leuit mun pare anyar tas diakut ti huma.',
-    'Mun aya bau apek atawa haseum, geura jemur deui pare dina poe panas.'
+    'Lakukan pemeriksaan fisik lumbung setiap pagi untuk memastikan pertukaran udara segar.',
+    'Hindari menutup rapat ventilasi jika gabah baru saja dimasukkan dari panen.',
+    'Jika tercium aroma apek atau asam, segera jemur ulang gabah pada cuaca cerah.'
   ];
   const disclaimer = profileData?.disclaimer || 'Konten kearifan lokal berstatus panduan awal.';
+  const profileName = profileData?.name || 'Bahasa Indonesia';
 
   return (
     <div className="bg-cardBg rounded-2xl p-5 sm:p-6 border border-cardBorder shadow-soft">
@@ -17,12 +18,12 @@ export default function TraditionReminders({ profileData }) {
             <BookOpen className="w-4 h-4" />
           </div>
           <div>
-            <h3 className="text-base font-bold text-textTitle">Tata Kelola Adat & Pengingat Tradisi</h3>
-            <p className="text-xs text-textMuted">Pedoman kearifan agronomi lokal</p>
+            <h3 className="text-base font-bold text-textTitle">Tata Kelola &amp; Pengingat Lumbung</h3>
+            <p className="text-xs text-textMuted">Pedoman agronomi &amp; kearifan penyimpanan gabah</p>
           </div>
         </div>
         <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emeraldLight text-emeraldPrimary border border-emerald-200">
-          Pedoman Budaya
+          {profileName}
         </span>
       </div>
 

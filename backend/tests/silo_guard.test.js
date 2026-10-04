@@ -288,6 +288,7 @@ await test('4. Pengujian Kunci Manual Kipas & Safety Override', async (t) => {
 await test('5. Pengujian Deteksi Kegagalan Sensor (sensor_ok = false)', async (t) => {
   await t.test('Telemetri dengan sensor_ok = false dilewati dan ditandai tidak_diketahui', async () => {
     const { processTelemetryIngestion } = await import('../src/server.js');
+    const { pgQuery } = await import('../src/db.js');
 
     // Kirim payload dengan kegagalan sensor (data fallback)
     const result = await processTelemetryIngestion({
@@ -299,10 +300,18 @@ await test('5. Pengujian Deteksi Kegagalan Sensor (sensor_ok = false)', async (t
       sensor_ok: false
     });
 
-    assert.equal(result.riskScore, null, 'Risk score tidak boleh dihitung dari data fallback');
-    assert.equal(result.riskLevel, 'tidak_diketahui', 'Level risiko harus tidak_diketahui');
-    assert.equal(result.sensorFault, true, 'Bendera sensorFault harus bernilai true');
-    assert.equal(result.telemetry.sensor_ok, false, 'sensor_ok harus tersimpan false');
+    try {
+      assert.equal(result.riskScore, null, 'Risk score tidak boleh dihitung dari data fallback');
+      assert.equal(result.riskLevel, 'tidak_diketahui', 'Level risiko harus tidak_diketahui');
+      assert.equal(result.sensorFault, true, 'Bendera sensorFault harus bernilai true');
+      assert.equal(result.telemetry.sensor_ok, false, 'sensor_ok harus tersimpan false');
+    } finally {
+      // Bersihkan data uji agar tidak merusak data real-time dashboard silo-01
+      if (result.telemetry?.id) {
+        await pgQuery('DELETE FROM telemetry WHERE id = $1', [result.telemetry.id]);
+      }
+      await pgQuery("DELETE FROM alerts WHERE silo_id = 'silo-01' AND jenis = 'SENSOR_FAULT' AND resolved = false");
+    }
   });
 });
 

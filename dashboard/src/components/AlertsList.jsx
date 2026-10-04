@@ -26,8 +26,8 @@ export default function AlertsList({ alerts = [] }) {
             <Bell className="w-4 h-4" />
           </div>
           <div>
-            <h3 className="text-base font-bold text-textTitle">Catatan Peringatan & Hawa Lumbung</h3>
-            <p className="text-xs text-textMuted">Histori alarm dan respon tradisi</p>
+            <h3 className="text-base font-bold text-textTitle">Catatan Peringatan & Kondisi Lumbung</h3>
+            <p className="text-xs text-textMuted">Histori alarm dan respon tata kelola lumbung</p>
           </div>
         </div>
         <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-appBg text-textMuted border border-cardBorder">
@@ -39,7 +39,7 @@ export default function AlertsList({ alerts = [] }) {
         {alerts.length === 0 ? (
           <div className="py-8 text-center text-textMuted text-xs">
             <ShieldCheck className="w-8 h-8 mx-auto text-statusGreen mb-2 opacity-60" />
-            Lumbung dalam keadaan tenang dan rahayu. Belum ada peringatan anomali.
+            Lumbung dalam keadaan aman dan optimal. Belum ada peringatan anomali.
           </div>
         ) : (
           alerts.map((alert) => {

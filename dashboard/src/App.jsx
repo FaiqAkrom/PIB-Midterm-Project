@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import TrendsChart from './components/TrendsChart';
 import EconomicsPanel from './components/EconomicsPanel';
 import AlertsList from './components/AlertsList';
@@ -28,7 +28,13 @@ export default function App() {
     { id: 'silo-02', nama: 'Lumbung Makmur Jaya 02', komoditas: 'Padi IR-64', stok_kg: 8500, harga_per_kg: 13200, lokasi: 'Desa Karanganyar, Boyolali' }
   ]);
   const [selectedSiloId, setSelectedSiloId] = useState('silo-01');
-  const [cultureProfile, setCultureProfile] = useState('sunda');
+  const [cultureProfile, setCultureProfile] = useState(() => {
+    try {
+      return localStorage.getItem('silo_culture_profile') || 'indonesia';
+    } catch (e) {
+      return 'indonesia';
+    }
+  });
   const [localeData, setLocaleData] = useState(null);
 
   // Telemetry & Fan State
@@ -54,7 +60,7 @@ export default function App() {
   const [isOnline, setIsOnline] = useState(true);
   const [timeRange, setTimeRange] = useState('1h');
   const [toastMessage, setToastMessage] = useState(null);
-  const [showSimulator, setShowSimulator] = useState(false);
+  const [showSimulator, setShowSimulator] = useState(true);
   const [currentTimeMs, setCurrentTimeMs] = useState(Date.now());
 
   // Hitung mundur live dan sinkronisasi kedaluwarsa kunci manual
@@ -78,10 +84,131 @@ export default function App() {
     }, 2800);
   };
 
+  // Draggable Floating Card State & Handlers
+  const mapContainerRef = useRef(null);
+  const [dragPos, setDragPos] = useState({ x: 0, y: 0 });
+  const isDraggingRef = useRef(false);
+  const dragStartRef = useRef({ startMouseX: 0, startMouseY: 0, startPosX: 0, startPosY: 0 });
+
+  const handleCardMouseDown = (e) => {
+    if (e.target.closest('button') || e.target.closest('input')) return;
+    e.preventDefault();
+    isDraggingRef.current = true;
+    dragStartRef.current = {
+      startMouseX: e.clientX,
+      startMouseY: e.clientY,
+      startPosX: dragPos.x,
+      startPosY: dragPos.y
+    };
+
+    const handleMouseMove = (ev) => {
+      if (!isDraggingRef.current) return;
+      const dx = ev.clientX - dragStartRef.current.startMouseX;
+      const dy = ev.clientY - dragStartRef.current.startMouseY;
+      let nextX = dragStartRef.current.startPosX + dx;
+      let nextY = dragStartRef.current.startPosY + dy;
+
+      if (mapContainerRef.current) {
+        const rect = mapContainerRef.current.getBoundingClientRect();
+        const cardWidth = 240;
+        const cardHeight = 220;
+        const minX = -(rect.width - 24 - cardWidth);
+        const maxX = 16;
+        const minY = -16;
+        const maxY = Math.max(0, rect.height - cardHeight - 16);
+        nextX = Math.max(minX, Math.min(maxX, nextX));
+        nextY = Math.max(minY, Math.min(maxY, nextY));
+      }
+      setDragPos({ x: nextX, y: nextY });
+    };
+
+    const handleMouseUp = () => {
+      isDraggingRef.current = false;
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  };
+
+  const handleCardTouchStart = (e) => {
+    if (e.target.closest('button') || e.target.closest('input')) return;
+    const touch = e.touches[0];
+    isDraggingRef.current = true;
+    dragStartRef.current = {
+      startMouseX: touch.clientX,
+      startMouseY: touch.clientY,
+      startPosX: dragPos.x,
+      startPosY: dragPos.y
+    };
+
+    const handleTouchMove = (ev) => {
+      if (!isDraggingRef.current) return;
+      const t = ev.touches[0];
+      const dx = t.clientX - dragStartRef.current.startMouseX;
+      const dy = t.clientY - dragStartRef.current.startMouseY;
+      let nextX = dragStartRef.current.startPosX + dx;
+      let nextY = dragStartRef.current.startPosY + dy;
+
+      if (mapContainerRef.current) {
+        const rect = mapContainerRef.current.getBoundingClientRect();
+        const cardWidth = 240;
+        const cardHeight = 220;
+        const minX = -(rect.width - 24 - cardWidth);
+        const maxX = 16;
+        const minY = -16;
+        const maxY = Math.max(0, rect.height - cardHeight - 16);
+        nextX = Math.max(minX, Math.min(maxX, nextX));
+        nextY = Math.max(minY, Math.min(maxY, nextY));
+      }
+      setDragPos({ x: nextX, y: nextY });
+    };
+
+    const handleTouchEnd = () => {
+      isDraggingRef.current = false;
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleTouchEnd);
+    };
+
+    window.addEventListener('touchmove', handleTouchMove, { passive: true });
+    window.addEventListener('touchend', handleTouchEnd);
+  };
+
+  // Helper ganti profil bahasa / kearifan lokal
+  const handleCultureProfileChange = async (newProfile) => {
+    setCultureProfile(newProfile);
+    try {
+      localStorage.setItem('silo_culture_profile', newProfile);
+    } catch (e) {}
+
+    const profileLabels = {
+      indonesia: 'Bahasa Indonesia (Standar)',
+      indonesia_desa: 'Indonesia Desa (Lugas)',
+      sunda: 'Kearifan Pasundan (Sunda)',
+      jawa: 'Kearifan Kejawen (Jawa)'
+    };
+    showToast(`Bahasa dialihkan ke: ${profileLabels[newProfile] || newProfile}`);
+
+    try {
+      await updateCultureProfile(newProfile);
+    } catch (err) {
+      console.warn('[CULTURE UPDATE ERROR]:', err.message);
+    }
+  };
+
   // 1. Inisialisasi Data Awal
   useEffect(() => {
     async function initData() {
       try {
+        const savedProfile = (() => {
+          try {
+            return localStorage.getItem('silo_culture_profile');
+          } catch (e) {
+            return null;
+          }
+        })();
+
         const [silosRes, localeRes] = await Promise.all([
           fetchSilos(),
           fetchLocaleData()
@@ -90,7 +217,12 @@ export default function App() {
         if (silosRes?.data && silosRes.data.length > 0) setSilos(silosRes.data);
         if (localeRes?.data) {
           setLocaleData(localeRes.data);
-          if (localeRes.currentProfile) setCultureProfile(localeRes.currentProfile);
+        }
+
+        const effectiveProfile = savedProfile || localeRes?.currentProfile || 'indonesia';
+        setCultureProfile(effectiveProfile);
+        if (savedProfile && savedProfile !== localeRes?.currentProfile) {
+          updateCultureProfile(savedProfile).catch(() => {});
         }
       } catch (err) {
         console.warn('[INIT ERROR]:', err.message);
@@ -178,33 +310,36 @@ export default function App() {
     return () => unsubscribe();
   }, [selectedSiloId]);
 
-  // Status Evaluasi
+  // Status Evaluasi Dinamis sesuai Profil Bahasa & Budaya
   const evaluatedStatus = useMemo(() => {
+    const profile = localeData?.profiles?.[cultureProfile];
+    const levels = profile?.levels;
+
     if (currentHum >= 75 || currentGas >= 50 || currentTemp >= 34) {
       return {
         level: 'danger',
-        label: 'Dangerous level',
+        label: levels?.bahaya?.label || 'Bahaya (Kritis)',
         color: '#EF4444',
         needleDeg: 45,
-        pestRisk: 'High Risk'
+        pestRisk: cultureProfile === 'sunda' ? 'Kritis' : cultureProfile === 'jawa' ? 'Bebaya Dhuwur' : 'Risiko Tinggi'
       };
     } else if (currentHum >= 70 || currentGas >= 35 || currentTemp >= 31) {
       return {
         level: 'warning',
-        label: 'Warning level',
+        label: levels?.waspada?.label || 'Waspada',
         color: '#F59E0B',
         needleDeg: 15,
-        pestRisk: 'Moderate'
+        pestRisk: cultureProfile === 'sunda' ? 'Waspada' : cultureProfile === 'jawa' ? 'Prayitna' : 'Risiko Sedang'
       };
     }
     return {
       level: 'safe',
-      label: 'Optimal level',
+      label: levels?.aman?.label || 'Aman & Optimal',
       color: '#B5EA3A',
       needleDeg: -35,
-      pestRisk: 'Low Risk'
+      pestRisk: cultureProfile === 'sunda' ? 'Tengtrem' : cultureProfile === 'jawa' ? 'Rahayu' : 'Risiko Rendah'
     };
-  }, [currentTemp, currentHum, currentGas]);
+  }, [currentTemp, currentHum, currentGas, localeData, cultureProfile]);
 
   const selectedSilo = silos.find(s => s.id === selectedSiloId) || silos[0];
   const stokKg = selectedSilo?.stok_kg || 5000;
@@ -428,7 +563,7 @@ export default function App() {
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                 </svg>
-                Back
+                {cultureProfile === 'sunda' ? 'Mulih' : cultureProfile === 'jawa' ? 'Wangsul' : 'Kembali'}
               </button>
             )}
             <div>
@@ -458,6 +593,22 @@ export default function App() {
                     {s.nama} ({s.id})
                   </option>
                 ))}
+              </select>
+            </div>
+
+            {/* Language & Cultural Governance Selector Dropdown */}
+            <div className="relative">
+              <select
+                id="header-culture-selector"
+                value={cultureProfile}
+                onChange={(e) => handleCultureProfileChange(e.target.value)}
+                className="flex items-center gap-2 px-3.5 py-2 bg-[#E3E8EA] hover:bg-white/90 rounded-full text-xs font-semibold text-slate-700 border border-white/60 shadow-sm transition cursor-pointer focus:outline-none"
+                title="Pilih Bahasa & Tata Kelola Lumbung"
+              >
+                <option value="indonesia">Bahasa Indonesia (Standar)</option>
+                <option value="indonesia_desa">Indonesia Desa (Lugas)</option>
+                <option value="sunda">Sunda (Leuit Kasepuhan)</option>
+                <option value="jawa">Jawa (Lumbung Kejawen)</option>
               </select>
             </div>
 
@@ -492,23 +643,23 @@ export default function App() {
               <div className="w-full h-1.5 rounded-full bg-gradient-to-r from-lime-400 via-amber-400 to-rose-500 mt-0.5" />
             </div>
 
-            {/* Apples Alert Card */}
+            {/* Padi Ciherang Commodity Card */}
             <div
-              onClick={() => showToast('Komoditas Apel/Ciherang: Kelembapan tumpukan terpantau')}
+              onClick={() => showToast('Komoditas Padi Ciherang (Silo 01): Kelembapan tumpukan terpantau')}
               className="glass-card p-2 flex flex-col justify-between w-28 h-24 relative overflow-hidden group hover:scale-[1.02] transition cursor-pointer"
             >
-              <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-800 z-10">
-                <span className="w-2 h-2 rounded-full bg-green-500" /> Apples
+              <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-900 z-10 drop-shadow-sm">
+                <span className="w-2 h-2 rounded-full bg-amber-400 shadow-sm" /> Padi Ciherang
               </div>
               <div className="absolute inset-0 z-0">
                 <img
-                  src="https://images.unsplash.com/photo-1560806887-1e4cd0b6cbd6?auto=format&fit=crop&w=260&q=80"
-                  alt="Green Apples"
-                  className="w-full h-full object-cover rounded-2xl opacity-80 group-hover:scale-105 transition-all duration-300"
+                  src="https://images.unsplash.com/photo-1536304929831-ee1ca9d44906?auto=format&fit=crop&w=300&q=80"
+                  alt="Gabah Padi Ciherang"
+                  className="w-full h-full object-cover rounded-2xl opacity-85 group-hover:scale-105 transition-all duration-300"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-white/40" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-white/60" />
               </div>
-              {/* Pest risk badge */}
+              {/* Pest / Status risk badge */}
               <div className="z-10 mt-auto">
                 <div className={`rounded-full px-2 py-0.5 text-[9px] font-bold flex items-center gap-1 shadow-sm backdrop-blur-sm ${
                   evaluatedStatus.level === 'danger' ? 'bg-red-500/90 text-white' : 'bg-lime-500/90 text-black'
@@ -521,29 +672,31 @@ export default function App() {
               </div>
             </div>
 
-            {/* Cherries Alert Card */}
+            {/* Padi IR-64 Commodity Card */}
             <div
-              onClick={() => showToast('Komoditas Cherries/IR-64: Terproteksi sistem lumbung')}
+              onClick={() => showToast('Komoditas Padi IR-64 (Silo 02): Terproteksi sistem lumbung')}
               className="glass-card p-2 flex flex-col justify-between w-28 h-24 relative overflow-hidden group hover:scale-[1.02] transition cursor-pointer"
             >
-              <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-800 z-10">
-                <span className="w-2 h-2 rounded-full bg-rose-500" /> Cherries
+              <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-900 z-10 drop-shadow-sm">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-sm" /> Padi IR-64
               </div>
               <div className="absolute inset-0 z-0">
                 <img
-                  src="https://images.unsplash.com/photo-1528825871115-3581a5387919?auto=format&fit=crop&w=260&q=80"
-                  alt="Cherries"
+                  src="https://images.unsplash.com/photo-1586201375761-83865001e31c?auto=format&fit=crop&w=300&q=80"
+                  alt="Bulir Gabah Padi IR-64"
                   className="w-full h-full object-cover rounded-2xl opacity-85 group-hover:scale-105 transition-all duration-300"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-white/40" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-white/60" />
               </div>
-              {/* Pest risk badge */}
+              {/* Quality / Protection badge */}
               <div className="z-10 mt-auto">
-                <div className="bg-red-500/90 text-white rounded-full px-2 py-0.5 text-[9px] font-bold flex items-center gap-1 shadow-sm backdrop-blur-sm">
-                  <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                <div className={`rounded-full px-2 py-0.5 text-[9px] font-bold flex items-center gap-1 shadow-sm backdrop-blur-sm ${
+                  evaluatedStatus.level === 'danger' ? 'bg-amber-500/90 text-white' : 'bg-emerald-500/90 text-white'
+                }`}>
+                  <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
-                  pest risk
+                  {evaluatedStatus.level === 'danger' ? 'Perlu Cek' : 'Kualitas Baik'}
                 </div>
               </div>
             </div>
@@ -698,8 +851,18 @@ export default function App() {
                         </svg>
                       </div>
                       <div>
-                        <h3 className="text-sm font-bold text-slate-900 leading-tight">Pruning & Inspeksi</h3>
-                        <p className="text-xs text-slate-500 font-medium mt-0.5">Kearifan lokal lumbung</p>
+                        <h3 className="text-sm font-bold text-slate-900 leading-tight">
+                          {cultureProfile === 'sunda'
+                            ? 'Nilik Leuit & Adat'
+                            : cultureProfile === 'jawa'
+                            ? 'Priksa Lumbung & Adat'
+                            : 'Inspeksi & Pengingat Lumbung'}
+                        </h3>
+                        <p className="text-xs text-slate-500 font-medium mt-0.5">
+                          {cultureProfile === 'indonesia'
+                            ? 'Panduan tata kelola pascapanen'
+                            : 'Kearifan lokal lumbung'}
+                        </p>
                       </div>
                     </div>
                     <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-[#B5EA3A] text-slate-900">
@@ -916,7 +1079,7 @@ export default function App() {
             </div>
 
             {/* ================= RIGHT SATELLITE FIELD MONITORING AND NDVI ZONE ================= */}
-            <div className="xl:col-span-6 relative rounded-[2rem] overflow-hidden min-h-[440px] xl:min-h-full border border-white/60 shadow-xl group">
+            <div ref={mapContainerRef} className="xl:col-span-6 relative rounded-[2rem] overflow-hidden min-h-[440px] xl:min-h-full border border-white/60 shadow-xl group">
 
               {/* Satellite Base Map Image */}
               <img
@@ -977,8 +1140,21 @@ export default function App() {
                 </svg>
               </button>
 
-              {/* Floating Moisture / Water Card */}
-              <div className="absolute top-6 right-6 glass-card-dark p-4 w-60 shadow-2xl text-white">
+              {/* Floating Draggable Moisture / Water Card */}
+              <div
+                onMouseDown={handleCardMouseDown}
+                onTouchStart={handleCardTouchStart}
+                style={{
+                  transform: `translate3d(${dragPos.x}px, ${dragPos.y}px, 0)`,
+                  touchAction: 'none'
+                }}
+                className="absolute top-6 right-6 z-30 glass-card-dark p-4 w-60 shadow-2xl text-white select-none cursor-grab active:cursor-grabbing transition-shadow hover:shadow-cyan-500/25 border border-white/20 backdrop-blur-md"
+                title="Tahan & geser untuk memindahkan jendela ini. Dobel-klik untuk reset posisi."
+                onDoubleClick={() => setDragPos({ x: 0, y: 0 })}
+              >
+                {/* Drag Handle Bar Indicator */}
+                <div className="w-10 h-1 bg-white/30 rounded-full mx-auto mb-2 opacity-70 hover:opacity-100 transition" />
+
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5 text-xs font-semibold text-white/90">
                     <svg className="w-4 h-4 text-cyan-400 fill-current" viewBox="0 0 20 20">
@@ -986,7 +1162,10 @@ export default function App() {
                     </svg>
                     Water & RH
                   </div>
-                  <span className={`w-2 h-2 rounded-full ${evaluatedStatus.level === 'danger' ? 'bg-rose-500 animate-pulse' : 'bg-cyan-400'}`} />
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[9px] font-mono text-white/40 tracking-wider">⠿ DRAG</span>
+                    <span className={`w-2 h-2 rounded-full ${evaluatedStatus.level === 'danger' ? 'bg-rose-500 animate-pulse' : 'bg-cyan-400'}`} />
+                  </div>
                 </div>
 
                 <p className="text-[11px] text-white/60 font-medium mt-0.5">
@@ -1015,13 +1194,19 @@ export default function App() {
                 {/* Interactive Action Buttons */}
                 <div className="grid grid-cols-2 gap-2 mt-3 text-xs font-bold">
                   <button
-                    onClick={handleToggleFan}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleToggleFan();
+                    }}
                     className="py-2 px-3 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white shadow-md flex items-center justify-center gap-1 transition active:scale-95 cursor-pointer"
                   >
                     <span>{fanOn ? '⏹' : '+'}</span> {fanOn ? 'Blower ON' : 'Watering'}
                   </button>
                   <button
-                    onClick={() => showToast('⏰ Moisture alert snoozed for 60 minutes')}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      showToast('⏰ Moisture alert snoozed for 60 minutes');
+                    }}
                     className="py-2 px-3 rounded-xl bg-white/10 hover:bg-white/20 text-white/90 border border-white/10 flex items-center justify-center gap-1 transition active:scale-95 cursor-pointer"
                   >
                     <span>✕</span> Snooze
@@ -1087,9 +1272,115 @@ export default function App() {
 
         {/* VIEW: CULTURAL REMINDERS & ALERTS */}
         {activeView === 'culture' && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            <AlertsList alerts={alerts} />
-            <TraditionReminders profileData={localeData?.profiles?.[cultureProfile]} />
+          <div className="space-y-5">
+            {/* Kartu Pemilih Profil Bahasa & Tata Kelola Lumbung */}
+            <div className="glass-card p-5 border border-white/60 shadow-sm">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-600 flex items-center justify-center text-white shadow-sm font-bold text-sm">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <circle cx="12" cy="12" r="10" />
+                      <line x1="2" y1="12" x2="22" y2="12" />
+                      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900">
+                      Pilihan Bahasa &amp; Tata Kelola Lumbung
+                    </h3>
+                    <p className="text-xs text-slate-500 font-medium">
+                      Pilih bahasa tampilan dan rujukan kearifan lokal Nusantara untuk peringatan mikroklimat
+                    </p>
+                  </div>
+                </div>
+                <span className="text-xs font-semibold px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 self-start sm:self-auto border border-emerald-200">
+                  Aktif: {localeData?.profiles?.[cultureProfile]?.name || 'Bahasa Indonesia (Standar)'}
+                </span>
+              </div>
+
+              {/* 4 Pilihan Profil Bahasa */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                {[
+                  {
+                    id: 'indonesia',
+                    code: 'ID',
+                    title: 'Bahasa Indonesia',
+                    subtitle: 'Standar & Modern',
+                    granary: 'Lumbung Pangan',
+                    desc: 'Manajemen pascapanen formal dengan terminologi baku nasional.'
+                  },
+                  {
+                    id: 'indonesia_desa',
+                    code: 'DESA',
+                    title: 'Indonesia Desa',
+                    subtitle: 'Lugas & Praktis',
+                    granary: 'Lumbung Pangan',
+                    desc: 'Instruksi langsung dan sederhana tanpa istilah teknis berbelit.'
+                  },
+                  {
+                    id: 'sunda',
+                    code: 'SUNDA',
+                    title: 'Kearifan Pasundan',
+                    subtitle: 'Tradisi Sunda',
+                    granary: 'Leuit Adat',
+                    desc: 'Disarikan dari filosofi Leuit Adat Kasepuhan Banten Kidul & Ciptagelar.'
+                  },
+                  {
+                    id: 'jawa',
+                    code: 'JAWA',
+                    title: 'Kearifan Kejawen',
+                    subtitle: 'Tradisi Jawa',
+                    granary: 'Gedhong Pantun',
+                    desc: 'Disarikan saking tradisi lumbung ageng lan pranata mangsa Jawa.'
+                  }
+                ].map((item) => {
+                  const isSelected = cultureProfile === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => handleCultureProfileChange(item.id)}
+                      className={`p-3.5 rounded-2xl text-left transition-all border flex flex-col justify-between cursor-pointer ${
+                        isSelected
+                          ? 'bg-gradient-to-br from-emerald-50 to-teal-50 border-emerald-500 ring-2 ring-emerald-500/20 shadow-md'
+                          : 'bg-white/70 hover:bg-white border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between gap-1 mb-2">
+                          <span className="text-[10px] font-bold font-mono tracking-wider px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200">
+                            {item.code}
+                          </span>
+                          {isSelected && (
+                            <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-emerald-600 text-white">
+                              Terpilih
+                            </span>
+                          )}
+                        </div>
+                        <h4 className="text-xs sm:text-sm font-bold text-slate-900 leading-snug">
+                          {item.title}
+                        </h4>
+                        <span className="text-[11px] font-semibold text-emerald-700 block">
+                          {item.subtitle}
+                        </span>
+                        <p className="text-[11px] text-slate-500 font-medium mt-1.5 leading-relaxed">
+                          {item.desc}
+                        </p>
+                      </div>
+                      <div className="mt-3 pt-2 border-t border-slate-200/80 flex items-center justify-between text-[10px] text-slate-600 font-mono">
+                        <span>Sebutan:</span>
+                        <strong className="text-slate-800">{item.granary}</strong>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* List Peringatan dan Pedoman Tradisi */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              <AlertsList alerts={alerts} />
+              <TraditionReminders profileData={localeData?.profiles?.[cultureProfile]} />
+            </div>
           </div>
         )}
 

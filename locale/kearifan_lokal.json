@@ -124,6 +124,46 @@
         "Pemisahan Stok: Pisahkan gabah benih di rak atas dan gabah konsumsi harian di bagian bawah.",
         "Kebersihan Kolong: Bersihkan kolong lumbung dari sisa gabah basah agar tidak mengundang tikus dan kutu beras."
       ]
+    },
+    "indonesia": {
+      "id": "indonesia",
+      "name": "Bahasa Indonesia (Standar)",
+      "disclaimer": "Bahasa Indonesia standar untuk manajemen pergudangan dan pemantauan mikroklimat lumbung pangan.",
+      "granary_term": "Lumbung Pangan",
+      "commodity_term": "Gabah Padi",
+      "fan_term": "Kipas Ventilasi",
+      "levels": {
+        "aman": {
+          "label": "Aman & Optimal",
+          "color": "#10b981",
+          "description": "Udara lumbung bersih dan kering sejuk, gabah tersimpan dengan baik tanpa tanda anomali."
+        },
+        "waspada": {
+          "label": "Waspada",
+          "color": "#f59e0b",
+          "description": "Terdeteksi kenaikan kelembapan atau suhu di atas batas aman. Perlu pemeriksaan fisik lumbung."
+        },
+        "bahaya": {
+          "label": "Bahaya (Kritis)",
+          "color": "#ef4444",
+          "description": "Kondisi sangat lembap dan akumulasi gas pembusukan tinggi! Segera lakukan tindakan darurat."
+        }
+      },
+      "alerts": {
+        "humidity_warning": "Gabah mulai lembap, segera buka ventilasi agar sirkulasi udara mengalir lancar.",
+        "humidity_danger": "Kelembapan udara sangat tinggi di lumbung! Kipas otomatis menyala, periksa tumpukan dari ancaman jamur.",
+        "gas_warning": "Terdeteksi aroma apek dan peningkatan gas respirasi, segera periksa sirkulasi udara dasar lumbung.",
+        "gas_danger": "Gas pembusukan dan fermentasi pekat! Kipas ventilasi beroperasi penuh, segera bongkar dan jemur gabah!",
+        "temp_warning": "Suhu lumbung meningkat di atas batas aman, waspadai pemanasan akibat respirasi gabah.",
+        "combined_danger": "Bahaya ganda! Suhu tinggi dan sangat lembap memicu kapang. Kipas aktif, periksa lumbung sekarang!",
+        "rapid_trend": "Perubahan tren cepat dalam 5 menit terakhir! Indikasi peningkatan respirasi dan pembusukan aktif di dalam tumpukan.",
+        "resolved": "Kondisi lumbung telah kembali normal, aman, dan sejuk. Kipas otomatis dimatikan."
+      },
+      "cultural_reminders": [
+        "Jadwal Pemeriksaan Rutin: Lakukan inspeksi kondisi fisik gabah secara berkala setiap pagi sebelum suhu luar meningkat.",
+        "Penataan Tumpukan: Simpan benih unggul di rak atas dan gabah konsumsi di bagian bawah dengan alas palet kayu.",
+        "Prosedur Masuk Lumbung: Pastikan pakaian kering dan bersih sebelum masuk ke ruang penyimpanan agar tidak menambah kelembapan."
+      ]
     }
   }
 }

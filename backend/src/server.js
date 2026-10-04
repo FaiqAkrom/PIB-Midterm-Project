@@ -26,6 +26,7 @@ import {
   saveFanEvent,
   saveLossEstimate,
   getLatestLossEstimate,
+  resolveAlerts,
   dataEvents
 } from './db.js';
 
@@ -53,8 +54,8 @@ app.use(express.json());
 
 // Status level terakhir per silo untuk menghindari spam notifikasi
 const lastLevelBySilo = new Map();
-// Cache profil budaya yang dipilih
-let currentCultureProfile = process.env.DEFAULT_CULTURE_PROFILE || 'sunda';
+// Cache profil budaya yang dipilih (default: indonesia)
+let currentCultureProfile = process.env.DEFAULT_CULTURE_PROFILE || 'indonesia';
 
 // Muat kamus kearifan lokal
 let localWisdomData = null;
@@ -111,12 +112,18 @@ export async function processTelemetryIngestion(payload) {
     if (previousLevel !== 'tidak_diketahui') {
       lastLevelBySilo.set(silo_id, 'tidak_diketahui');
 
+      const pesanLokal = currentCultureProfile === 'sunda'
+        ? `Peringatan: Sensor leuit ${silo_id} nuju gangguan atawa ruksak. Geura pariksa alat sangkan pantauan teu kaganggu.`
+        : currentCultureProfile === 'jawa'
+        ? `Pènget: Sensor lumbung ${silo_id} lagi rusak utawa pedhot. Mangga enggal dipriksa pirantine.`
+        : `Peringatan: Sensor lumbung ${silo_id} mengalami gangguan atau rusak. Segera periksa perangkat agar pemantauan tidak terganggu.`;
+
       await saveAlert({
         silo_id,
         level: 'waspada',
         jenis: 'SENSOR_FAULT',
         pesan_teknis: `Sensor telemetri lumbung ${silo_id} mengalami kegagalan baca (nilai suhu/kelembapan/gas adalah fallback).`,
-        pesan_lokal: `Peringatan: Sensor leuit ${silo_id} nuju gangguan atawa ruksak. Geura pariksa alat sangkan pantauan teu kaganggu.`
+        pesan_lokal: pesanLokal
       });
     }
 
@@ -138,6 +145,9 @@ export async function processTelemetryIngestion(payload) {
       economics: latestDbEstimate
     };
   }
+
+  // Jika sensor beroperasi normal, otomatis selesaikan alert SENSOR_FAULT sebelumnya jika ada
+  resolveAlerts({ silo_id, jenis: 'SENSOR_FAULT' }).catch(() => {});
 
   // 2. Ambil riwayat telemetri singkat untuk deteksi tren 5 menit terakhir
   const recentHistory = await getTelemetryHistory(silo_id, { limit: 12 });
@@ -165,12 +175,18 @@ export async function processTelemetryIngestion(payload) {
 
   // Jika Safety Override terpicu (Bahaya menimpa kunci manual): Buat Alert Khusus Keselamatan
   if (fanResult.safetyOverrideTriggered) {
+    const pesanLokal = currentCultureProfile === 'sunda'
+      ? `Bahaya karuksakan gabah! Kunci manual dibolaykeun sacara otomatis jeung kipas dihurungkeun deui demi kasalametan beas.`
+      : currentCultureProfile === 'jawa'
+      ? `Bebaya karusakan gabah! Kunci manual dibatalake kanthi otomatis lan kipas diuripake maneh kanggo nylametake gabah.`
+      : `Bahaya kerusakan gabah! Kunci manual dibatalkan secara otomatis dan kipas dinyalakan kembali demi keselamatan stok gabah.`;
+
     await saveAlert({
       silo_id,
       level: 'bahaya',
       jenis: 'SAFETY_OVERRIDE',
       pesan_teknis: `Kondisi BAHAYA terdeteksi saat kipas dimatikan manual. Kunci manual ditimpa otomatis dan kipas dinyalakan demi perlindungan stok gabah.`,
-      pesan_lokal: `Bahaya karuksakan gabah! Kunci manual dibolaykeun sacara otomatis jeung kipas dihurungkeun deui demi kasalametan beas.`
+      pesan_lokal: pesanLokal
     });
   }
 

@@ -17,7 +17,13 @@ class FanController {
      *   manualOverride: boolean,
      *   manualOverrideExpiresAt: number|null,  // epoch ms, null = permanen sampai dilepas
      *   cumulativeExposureMinutes: number,      // TOTAL paparan kondisi buruk sepanjang hari
-     *   lastEvaluatedAt: number
+     *   cumulativeLossRp: number,              // Total kerugian akumulatif hari ini (Rp)
+     *   cumulativeSusutKg: number,             // Total susut bobot akumulatif hari ini (kg)
+     *   cumulativeDicegahRp: number,           // Total kerugian dicegah berkat kipas (Rp)
+     *   cumulativeLossDate: string,            // 'YYYY-MM-DD' untuk reset harian
+     *   lastEvaluatedAt: number,
+     *   lastEconomicsAt: number,
+     *   isInitializedFromDb: boolean
      * }
      */
     this.silos = new Map();
@@ -25,16 +31,60 @@ class FanController {
 
   getSiloState(siloId) {
     if (!this.silos.has(siloId)) {
+      const today = new Date().toISOString().slice(0, 10);
       this.silos.set(siloId, {
         fanOn: false,
         safeCount: 0,
         manualOverride: false,
         manualOverrideExpiresAt: null,
         cumulativeExposureMinutes: 0,
-        lastEvaluatedAt: Date.now()
+        cumulativeLossRp: 0,
+        cumulativeSusutKg: 0,
+        cumulativeDicegahRp: 0,
+        cumulativeLossDate: today,
+        lastEvaluatedAt: Date.now(),
+        lastEconomicsAt: Date.now(),
+        isInitializedFromDb: false
       });
     }
-    return this.silos.get(siloId);
+    const state = this.silos.get(siloId);
+    this.checkDailyReset(state, siloId);
+    return state;
+  }
+
+  /**
+   * Reset metrik ekonomi kumulatif jika pergantian hari kalender terdeteksi
+   */
+  checkDailyReset(state, siloId) {
+    const today = new Date().toISOString().slice(0, 10);
+    if (state.cumulativeLossDate !== today) {
+      console.log(`[ECONOMICS] Reset harian untuk ${siloId}: ${state.cumulativeLossDate} -> ${today}`);
+      state.cumulativeExposureMinutes = 0;
+      state.cumulativeLossRp = 0;
+      state.cumulativeSusutKg = 0;
+      state.cumulativeDicegahRp = 0;
+      state.cumulativeLossDate = today;
+    }
+  }
+
+  /**
+   * Pulihkan nilai akumulasi hari ini dari basis data (misal setelah backend restart)
+   */
+  initFromDbEstimate(siloId, dbEstimate) {
+    const state = this.getSiloState(siloId);
+    if (state.isInitializedFromDb) return;
+
+    if (dbEstimate && dbEstimate.created_at) {
+      const estimateDate = new Date(dbEstimate.created_at).toISOString().slice(0, 10);
+      const today = new Date().toISOString().slice(0, 10);
+      if (estimateDate === today) {
+        state.cumulativeLossRp = Math.max(state.cumulativeLossRp, Number(dbEstimate.est_kerugian_rp) || 0);
+        state.cumulativeSusutKg = Math.max(state.cumulativeSusutKg, Number(dbEstimate.est_susut_kg) || 0);
+        state.cumulativeDicegahRp = Math.max(state.cumulativeDicegahRp, Number(dbEstimate.est_dicegah_rp) || 0);
+        console.log(`[ECONOMICS] Memulihkan akumulasi ekonomi hari ini untuk ${siloId} dari DB: Rp${state.cumulativeLossRp}`);
+      }
+    }
+    state.isInitializedFromDb = true;
   }
 
   /**
@@ -52,11 +102,10 @@ class FanController {
   }
 
   /**
-   * Evaluasi otomasi kipas dengan histeresis.
-   * Dilewati seluruhnya saat mode manual aktif.
+   * Evaluasi otomasi kipas dengan histeresis & perlindungan keselamatan stok.
    *
    * @param {string} siloId
-   * @param {string} riskLevel ('aman' | 'waspada' | 'bahaya')
+   * @param {string} riskLevel ('aman' | 'waspada' | 'bahaya' | 'tidak_diketahui')
    * @param {Function} publishCommandFn (siloId, boolean) => Promise<void>
    * @param {Function} recordEventFn   (siloId, 'ON'|'OFF', 'otomatis'|'manual') => Promise<void>
    */
@@ -66,13 +115,33 @@ class FanController {
     const elapsedMinutes = (now - state.lastEvaluatedAt) / 60000;
     state.lastEvaluatedAt = now;
 
-    // --- Akumulasi paparan KUMULATIF (hanya bertambah, tidak pernah berkurang) ---
+    // --- Akumulasi paparan KUMULATIF (hanya bertambah saat waspada/bahaya) ---
     if (riskLevel === 'waspada' || riskLevel === 'bahaya') {
       state.cumulativeExposureMinutes += Math.max(0.08, elapsedMinutes);
     }
-    // Jika kondisi aman, paparan tetap tersimpan (kerugian sudah terjadi)
 
-    // --- Blokir otomasi selama mode manual aktif ---
+    // --- OVERRIDE KESELAMATAN (SAFETY OVERRIDE) SAAT BAHAYA ---
+    // Status Bahaya menimpa kunci manual jika kipas dalam keadaan mati demi melindungi stok gabah
+    if (riskLevel === 'bahaya' && this.isManualActive(state) && !state.fanOn) {
+      console.warn(`[SAFETY OVERRIDE] Silo ${siloId} dalam kondisi BAHAYA! Kunci manual dibatalkan demi keselamatan stok.`);
+      state.manualOverride = false;
+      state.manualOverrideExpiresAt = null;
+      state.fanOn = true;
+      state.safeCount = 0;
+
+      if (publishCommandFn) await publishCommandFn(siloId, true);
+      if (recordEventFn) await recordEventFn(siloId, 'ON', 'otomatis');
+
+      return {
+        fanOn: true,
+        exposureMinutes: Number(state.cumulativeExposureMinutes.toFixed(1)),
+        manualOverride: false,
+        manualOverrideExpiresAt: null,
+        safetyOverrideTriggered: true
+      };
+    }
+
+    // --- Blokir otomasi selama mode manual aktif (jika bukan bahaya mati) ---
     if (this.isManualActive(state)) {
       const expiresIn = state.manualOverrideExpiresAt
         ? Math.ceil((state.manualOverrideExpiresAt - Date.now()) / 60000)
@@ -82,11 +151,12 @@ class FanController {
         fanOn: state.fanOn,
         exposureMinutes: Number(state.cumulativeExposureMinutes.toFixed(1)),
         manualOverride: true,
-        manualOverrideExpiresAt: state.manualOverrideExpiresAt
+        manualOverrideExpiresAt: state.manualOverrideExpiresAt,
+        safetyOverrideTriggered: false
       };
     }
 
-    // --- Logika Otomasi + Histeresis ---
+    // --- Logika Otomasi + Histeresis Normal ---
     if (riskLevel === 'waspada' || riskLevel === 'bahaya') {
       state.safeCount = 0;
 
@@ -117,19 +187,13 @@ class FanController {
       fanOn: state.fanOn,
       exposureMinutes: Number(state.cumulativeExposureMinutes.toFixed(1)),
       manualOverride: false,
-      manualOverrideExpiresAt: null
+      manualOverrideExpiresAt: null,
+      safetyOverrideTriggered: false
     };
   }
 
   /**
    * Perintah kontrol manual dari dashboard.
-   *
-   * @param {string}   siloId
-   * @param {boolean}  targetState       - true = ON, false = OFF
-   * @param {Function} publishCommandFn
-   * @param {Function} recordEventFn
-   * @param {number|null} durationMinutes - berapa menit kunci manual berlaku
-   *                                        (null = permanen sampai dilepas eksplisit)
    */
   async setManualFan(siloId, targetState, publishCommandFn, recordEventFn, durationMinutes = DEFAULT_MANUAL_OVERRIDE_MINUTES) {
     const state = this.getSiloState(siloId);
@@ -165,7 +229,29 @@ class FanController {
     state.manualOverride = false;
     state.manualOverrideExpiresAt = null;
     console.log(`[FAN AUTO] Mode manual untuk ${siloId} dilepas. Otomasi aktif kembali.`);
-    return { siloId, manualOverride: false };
+    return { siloId, manualOverride: false, fanOn: state.fanOn };
+  }
+
+  /**
+   * Dapatkan ringkasan status kipas dan sisa waktu kunci
+   */
+  getStatus(siloId) {
+    const state = this.getSiloState(siloId);
+    const isManual = this.isManualActive(state);
+    const remainingMs = (isManual && state.manualOverrideExpiresAt)
+      ? Math.max(0, state.manualOverrideExpiresAt - Date.now())
+      : null;
+    const remainingMinutes = remainingMs !== null ? Math.ceil(remainingMs / 60000) : null;
+    const remainingSeconds = remainingMs !== null ? Math.ceil(remainingMs / 1000) : null;
+
+    return {
+      siloId,
+      fanOn: state.fanOn,
+      manualOverride: isManual,
+      manualOverrideExpiresAt: isManual ? state.manualOverrideExpiresAt : null,
+      remainingMinutes,
+      remainingSeconds
+    };
   }
 
   syncHardwareStatus(siloId, hardwareFanOn) {

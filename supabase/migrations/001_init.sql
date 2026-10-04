@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS telemetry (
     humidity NUMERIC(5, 2) NOT NULL,
     gas NUMERIC(7, 2) NOT NULL,
     fan_on BOOLEAN NOT NULL DEFAULT false,
+    sensor_ok BOOLEAN NOT NULL DEFAULT true,
     created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 

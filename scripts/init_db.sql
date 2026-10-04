@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS telemetry (
   humidity    FLOAT,
   gas         INTEGER,
   fan_on      BOOLEAN     DEFAULT false,
+  sensor_ok   BOOLEAN     NOT NULL DEFAULT true,
   created_at  TIMESTAMPTZ DEFAULT now()
 );
 

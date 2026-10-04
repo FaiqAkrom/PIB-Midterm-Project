@@ -14,6 +14,7 @@ import {
   setFanState,
   setFanStateWithDuration,
   releaseFanManual,
+  fetchFanStatus,
   subscribeRealtimeEvents
 } from './services/api';
 
@@ -54,6 +55,20 @@ export default function App() {
   const [timeRange, setTimeRange] = useState('1h');
   const [toastMessage, setToastMessage] = useState(null);
   const [showSimulator, setShowSimulator] = useState(false);
+  const [currentTimeMs, setCurrentTimeMs] = useState(Date.now());
+
+  // Hitung mundur live dan sinkronisasi kedaluwarsa kunci manual
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = Date.now();
+      setCurrentTimeMs(now);
+      if (isFanManual && manualOverrideExpiresAt && now >= manualOverrideExpiresAt) {
+        setIsFanManual(false);
+        setManualOverrideExpiresAt(null);
+      }
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [isFanManual, manualOverrideExpiresAt]);
 
   // Toast notification helper
   const showToast = (msg) => {
@@ -90,10 +105,11 @@ export default function App() {
 
     async function loadSiloData() {
       try {
-        const [teleRes, alertsRes, ecoRes] = await Promise.all([
+        const [teleRes, alertsRes, ecoRes, fanRes] = await Promise.all([
           fetchTelemetry(selectedSiloId, timeRange),
           fetchAlerts(selectedSiloId),
-          fetchEconomics(selectedSiloId)
+          fetchEconomics(selectedSiloId),
+          fetchFanStatus(selectedSiloId)
         ]);
 
         if (teleRes?.data && teleRes.data.length > 0) {
@@ -105,6 +121,12 @@ export default function App() {
           setCurrentGas(rawGas > 150 ? Math.round(rawGas / 10) : rawGas);
           setFanOn(Boolean(latest.fan_on));
           setSensorOk(latest.sensor_ok !== false); // undefined => true (sensor lama tanpa field)
+        }
+
+        if (fanRes?.data) {
+          setFanOn(Boolean(fanRes.data.fanOn));
+          setIsFanManual(Boolean(fanRes.data.manualOverride));
+          setManualOverrideExpiresAt(fanRes.data.manualOverrideExpiresAt);
         }
 
         if (alertsRes?.data) setAlerts(alertsRes.data);
@@ -197,8 +219,12 @@ export default function App() {
 
     try {
       const result = await setFanStateWithDuration(selectedSiloId, nextState, 60);
-      if (result?.data?.manualOverrideExpiresAt) {
-        setManualOverrideExpiresAt(result.data.manualOverrideExpiresAt);
+      if (result?.data) {
+        if (typeof result.data.fanOn === 'boolean') setFanOn(result.data.fanOn);
+        if (typeof result.data.manualOverride === 'boolean') setIsFanManual(result.data.manualOverride);
+        if (result.data.manualOverrideExpiresAt !== undefined) {
+          setManualOverrideExpiresAt(result.data.manualOverrideExpiresAt);
+        }
       }
     } catch (e) {
       console.warn('Gagal sinkron status kipas:', e.message);
@@ -211,7 +237,10 @@ export default function App() {
     setManualOverrideExpiresAt(null);
     showToast('🔄 Kipas dikembalikan ke mode otomatis');
     try {
-      await releaseFanManual(selectedSiloId);
+      const result = await releaseFanManual(selectedSiloId);
+      if (result?.data && typeof result.data.fanOn === 'boolean') {
+        setFanOn(result.data.fanOn);
+      }
     } catch (e) {
       console.warn('Gagal lepas mode manual:', e.message);
     }
@@ -631,9 +660,11 @@ export default function App() {
                           <p className="text-xs text-slate-500 font-medium mt-0.5">
                             {fanOn
                               ? isFanManual
-                                ? `Manual – Kunci ${manualOverrideExpiresAt ? Math.max(0, Math.ceil((manualOverrideExpiresAt - Date.now()) / 60000)) + ' mnt' : 'aktif'}`
+                                ? `Manual ON – Kunci ${manualOverrideExpiresAt ? Math.max(0, Math.ceil((manualOverrideExpiresAt - currentTimeMs) / 60000)) + ' mnt' : 'aktif'}`
                                 : 'Automatic Running'
-                              : isFanManual ? 'Manual OFF – Kunci aktif' : 'Idle Standby'}
+                              : isFanManual
+                                ? `Manual OFF – Kunci ${manualOverrideExpiresAt ? Math.max(0, Math.ceil((manualOverrideExpiresAt - currentTimeMs) / 60000)) + ' mnt' : 'aktif'}`
+                                : 'Idle Standby'}
                           </p>
                         </div>
                       </div>

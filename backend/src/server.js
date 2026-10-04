@@ -37,7 +37,7 @@ import {
 } from './anomaly.js';
 
 import { fanController } from './fanController.js';
-import { calculateEconomics } from './economics.js';
+import { calculateEconomics, calculateIncrementalLoss } from './economics.js';
 import { mqttService } from './mqttClient.js';
 
 dotenv.config();
@@ -87,10 +87,9 @@ export async function processTelemetryIngestion(payload) {
 
   const { silo_id, temp, humidity, gas, fan, sensor_ok } = parsed.data;
 
-  // Peringatan log jika sensor bermasalah
-  if (sensor_ok === false) {
-    console.warn(`[SENSOR FAULT] ${silo_id}: DHT22 gagal baca — data suhu/kelembapan adalah nilai fallback!`);
-  }
+  // Inisialisasi/pulihkan state ekonomi hari ini dari database jika baru pertama kali dipanggil
+  const latestDbEstimate = await getLatestLossEstimate(silo_id);
+  fanController.initFromDbEstimate(silo_id, latestDbEstimate);
 
   // 1. Simpan Telemetri ke Database
   const savedTelemetry = await saveTelemetry({
@@ -102,6 +101,44 @@ export async function processTelemetryIngestion(payload) {
     sensor_ok: sensor_ok ?? true
   });
 
+  // JIKA SENSOR RUSAK / NILAI FALLBACK:
+  // Jangan pakai nilai fallback (27°C / 65%) untuk menghitung risiko atau kalkulasi kerugian
+  if (sensor_ok === false) {
+    console.warn(`[SENSOR FAULT] ${silo_id}: Sensor bermasalah — evaluasi risiko dan otomasi dilewati, status ditandai 'tidak_diketahui'`);
+
+    // Catat alert kerusakan sensor (jika belum tercatat agar tidak spam)
+    const previousLevel = lastLevelBySilo.get(silo_id);
+    if (previousLevel !== 'tidak_diketahui') {
+      lastLevelBySilo.set(silo_id, 'tidak_diketahui');
+
+      await saveAlert({
+        silo_id,
+        level: 'waspada',
+        jenis: 'SENSOR_FAULT',
+        pesan_teknis: `Sensor telemetri lumbung ${silo_id} mengalami kegagalan baca (nilai suhu/kelembapan/gas adalah fallback).`,
+        pesan_lokal: `Peringatan: Sensor leuit ${silo_id} nuju gangguan atawa ruksak. Geura pariksa alat sangkan pantauan teu kaganggu.`
+      });
+    }
+
+    const fanStatus = fanController.getStatus(silo_id);
+    const siloState = fanController.getSiloState(silo_id);
+
+    return {
+      telemetry: savedTelemetry,
+      riskScore: null,
+      riskLevel: 'tidak_diketahui',
+      sensorFault: true,
+      trend: { hasRapidTrend: false, isRising: false, tempSlopePerMin: 0, humSlopePerMin: 0, gasSlopePerMin: 0 },
+      fan: {
+        fanOn: fanStatus.fanOn,
+        exposureMinutes: Number(siloState.cumulativeExposureMinutes.toFixed(1)),
+        manualOverride: fanStatus.manualOverride,
+        manualOverrideExpiresAt: fanStatus.manualOverrideExpiresAt
+      },
+      economics: latestDbEstimate
+    };
+  }
+
   // 2. Ambil riwayat telemetri singkat untuk deteksi tren 5 menit terakhir
   const recentHistory = await getTelemetryHistory(silo_id, { limit: 12 });
   const trend = evaluateTrend(recentHistory);
@@ -112,7 +149,7 @@ export async function processTelemetryIngestion(payload) {
   // 4. Tentukan Level Risiko (aman | waspada | bahaya)
   const currentLevel = determineRiskLevel(temp, humidity, gas, trend, riskScore);
 
-  // 5. Evaluasi Otomasi Kipas (Histeresis)
+  // 5. Evaluasi Otomasi Kipas (Histeresis & Safety Override)
   // publishFanCommand dibuat non-blocking: tidak await agar broker putus tidak menghambat pipeline
   const fanPublishFn = (sId, state) => {
     mqttService.publishFanCommand(sId, state).catch((err) =>
@@ -125,6 +162,17 @@ export async function processTelemetryIngestion(payload) {
     fanPublishFn,
     (sId, aksi, penyebab) => saveFanEvent({ silo_id: sId, aksi, penyebab })
   );
+
+  // Jika Safety Override terpicu (Bahaya menimpa kunci manual): Buat Alert Khusus Keselamatan
+  if (fanResult.safetyOverrideTriggered) {
+    await saveAlert({
+      silo_id,
+      level: 'bahaya',
+      jenis: 'SAFETY_OVERRIDE',
+      pesan_teknis: `Kondisi BAHAYA terdeteksi saat kipas dimatikan manual. Kunci manual ditimpa otomatis dan kipas dinyalakan demi perlindungan stok gabah.`,
+      pesan_lokal: `Bahaya karuksakan gabah! Kunci manual dibolaykeun sacara otomatis jeung kipas dihurungkeun deui demi kasalametan beas.`
+    });
+  }
 
   // 6. Evaluasi Perubahan Level & Notifikasi (Hanya buat alert saat level berubah)
   const previousLevel = lastLevelBySilo.get(silo_id) || 'aman';
@@ -148,17 +196,45 @@ export async function processTelemetryIngestion(payload) {
     console.log(`[ALERT BARU] Level ${silo_id} berubah: ${previousLevel} -> ${currentLevel} (${pesanLokal})`);
   }
 
-  // 7. Kalkulasi Ekonomi
+  // 7. Kalkulasi Ekonomi Kumulatif
   const silo = await getSiloById(silo_id);
-  const economics = calculateEconomics({
+  const siloState = fanController.getSiloState(silo_id);
+  const now = Date.now();
+  const elapsedMinutes = Math.min(60, Math.max(0.05, (now - siloState.lastEconomicsAt) / 60000));
+  siloState.lastEconomicsAt = now;
+
+  // Hitung penambahan kerugian siklus ini berdasarkan risk score saat ini
+  const delta = calculateIncrementalLoss({
     stokKg: silo?.stok_kg || 5000,
     hargaPerKg: silo?.harga_per_kg || 13500,
     riskScore: riskScore,
-    exposureDurationMinutes: fanResult.exposureMinutes,
+    elapsedMinutes: elapsedMinutes,
     fanOn: fanResult.fanOn
   });
 
-  // Simpan hasil kalkulasi ekonomi
+  // Tambahkan ke total akumulasi hari ini
+  siloState.cumulativeLossRp += delta.deltaKerugianRp;
+  siloState.cumulativeSusutKg += delta.deltaSusutKg;
+  siloState.cumulativeDicegahRp += delta.deltaDicegahRp;
+
+  const currentStock = silo?.stok_kg || 5000;
+  const cumulativeSusutPercent = currentStock > 0 ? (siloState.cumulativeSusutKg / currentStock) * 100 : 0;
+
+  const economics = calculateEconomics({
+    stokKg: currentStock,
+    hargaPerKg: silo?.harga_per_kg || 13500,
+    riskScore: riskScore,
+    exposureDurationMinutes: fanResult.exposureMinutes,
+    fanOn: fanResult.fanOn,
+    cumulativeLoss: {
+      est_kerugian_rp: siloState.cumulativeLossRp,
+      est_susut_kg: siloState.cumulativeSusutKg,
+      est_susut_persen: cumulativeSusutPercent,
+      est_dicegah_rp: siloState.cumulativeDicegahRp
+    }
+  });
+
+  // Simpan hasil kalkulasi ekonomi ke DB
   await saveLossEstimate({
     silo_id,
     risk_score: economics.risk_score,
@@ -178,22 +254,24 @@ export async function processTelemetryIngestion(payload) {
   };
 }
 
-// Inisialisasi MQTT Broker Subscriber
-mqttService.init({
-  onTelemetry: async (data, topic) => {
-    try {
-      const result = await processTelemetryIngestion(data);
-      console.log(`[INGEST SUCCESS] ${data.silo_id} -> Suhu: ${data.temp}°C, Lembap: ${data.humidity}%, Gas: ${data.gas}ppm | Risiko: ${result.riskLevel.toUpperCase()} (Skor: ${result.riskScore})`);
-    } catch (err) {
-      console.error('[MQTT INGEST ERROR]:', err.message);
+// Inisialisasi MQTT Broker Subscriber (hanya saat bukan mode test)
+if (process.env.NODE_ENV !== 'test') {
+  mqttService.init({
+    onTelemetry: async (data, topic) => {
+      try {
+        const result = await processTelemetryIngestion(data);
+        console.log(`[INGEST SUCCESS] ${data.silo_id} -> Suhu: ${data.temp}°C, Lembap: ${data.humidity}%, Gas: ${data.gas}ppm | Risiko: ${result.riskLevel.toUpperCase()} (Skor: ${result.riskScore})`);
+      } catch (err) {
+        console.error('[MQTT INGEST ERROR]:', err.message);
+      }
+    },
+    onStatus: (data) => {
+      if (data.silo_id && typeof data.fan === 'boolean') {
+        fanController.syncHardwareStatus(data.silo_id, data.fan);
+      }
     }
-  },
-  onStatus: (data) => {
-    if (data.silo_id && typeof data.fan === 'boolean') {
-      fanController.syncHardwareStatus(data.silo_id, data.fan);
-    }
-  }
-});
+  });
+}
 
 // ================= REST API ENDPOINTS =================
 
@@ -264,6 +342,28 @@ app.get('/api/silos/:id/economics', async (req, res) => {
   }
 });
 
+// GET /api/silos/:id/fan/status — Status kipas dan kunci manual
+app.get('/api/silos/:id/fan/status', (req, res) => {
+  try {
+    const { id } = req.params;
+    const status = fanController.getStatus(id);
+    res.json({ success: true, silo_id: id, data: status });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Alias GET /api/silos/:id/fan
+app.get('/api/silos/:id/fan', (req, res) => {
+  try {
+    const { id } = req.params;
+    const status = fanController.getStatus(id);
+    res.json({ success: true, silo_id: id, data: status });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // POST /api/silos/:id/fan — Kontrol manual kipas dari dashboard
 // Body: { fan: boolean, duration?: number (menit, null = permanen) }
 app.post('/api/silos/:id/fan', async (req, res) => {
@@ -275,8 +375,23 @@ app.post('/api/silos/:id/fan', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Field `fan` harus berupa boolean (true/false)' });
     }
 
-    // duration: undefined => default 60 menit, null => permanen, angka => N menit
-    const durationMinutes = duration === undefined ? 60 : (duration === null ? null : Number(duration));
+    // Validasi parameter duration:
+    // undefined => default 60 menit
+    // null => permanen sampai dilepas
+    // angka positif => N menit
+    let durationMinutes = 60;
+    if (duration === null) {
+      durationMinutes = null;
+    } else if (duration !== undefined) {
+      const parsed = Number(duration);
+      if (isNaN(parsed) || !Number.isFinite(parsed) || parsed <= 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'Parameter `duration` tidak valid. Harus berupa angka positif (menit), null untuk permanen, atau dikosongkan untuk default 60 menit.'
+        });
+      }
+      durationMinutes = Math.min(10080, Math.round(parsed)); // batas wajar maks 7 hari
+    }
 
     // MQTT publish non-blocking agar REST response tidak tertahan jika broker putus
     const fanPublishFn = (sId, state) => {

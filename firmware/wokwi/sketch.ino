@@ -159,8 +159,16 @@ float readHumidity() {
 }
 
 int readGasPpm() {
-  // Pembacaan analog 12-bit (0-4095) dari potensiometer simulator MQ-2/MQ-135
+  // Pembacaan analog 12-bit (0-4095) dari simulator/sensor gas MQ-2
   int rawAdc = analogRead(GAS_PIN);
+
+  // Deteksi kegagalan sensor gas: nilai batas ekstrim (terputus/korsleting ADC)
+  if (rawAdc < 10 || rawAdc > 4090) {
+    Serial.printf("[SENSOR WARN] Pembacaan ADC Gas abnormal (%d)! Sensor gas terputus atau rusak.\n", rawAdc);
+    sensorOk = false;
+    return 300; // nilai fallback
+  }
+
   // Konversi ke rentang perkiraan PPM gas indikator lumbung (100 - 1000 ppm)
   int gasPpm = map(rawAdc, 0, 4095, 100, 1000);
   return gasPpm;

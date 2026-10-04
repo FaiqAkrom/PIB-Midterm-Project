@@ -449,3 +449,12 @@ export async function getLatestLossEstimate(siloId) {
     created_at: new Date().toISOString()
   };
 }
+
+export async function closeDb() {
+  if (pgPool) {
+    try {
+      await pgPool.end();
+    } catch (e) {}
+    pgPool = null;
+  }
+}

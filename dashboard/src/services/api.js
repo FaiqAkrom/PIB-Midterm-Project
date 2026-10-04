@@ -78,6 +78,14 @@ export async function setFanStateWithDuration(siloId, fanState, duration = 60) {
 }
 
 /**
+ * Ambil status kipas dan kunci manual saat ini dari backend
+ */
+export async function fetchFanStatus(siloId) {
+  const res = await fetch(`${API_BASE}/api/silos/${siloId}/fan/status`);
+  return res.json();
+}
+
+/**
  * Lepaskan mode manual — kembalikan otomasi.
  */
 export async function releaseFanManual(siloId) {

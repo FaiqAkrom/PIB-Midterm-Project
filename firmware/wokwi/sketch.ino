@@ -38,7 +38,7 @@ int consecutiveDhtErrors = 0;
 const int MAX_DHT_ERRORS = 3; // Toleransi 3 kegagalan berturut-turut sebelum menandai sensor fault
 
 unsigned long lastTelemetryMillis = 0;
-const unsigned long TELEMETRY_INTERVAL_MS = 5000;
+const unsigned long TELEMETRY_INTERVAL_MS = 3000; // Dikurangi ke 3 detik agar respons perubahan sensor di Wokwi lebih sigap
 
 unsigned long lastMqttRetryMillis = 0;
 const unsigned long MQTT_RETRY_INTERVAL_MS = 5000;
@@ -147,6 +147,13 @@ void checkMqttConnection() {
 void readDhtSensors(float &outTemp, float &outHum) {
   float t = dht.readTemperature();
   float h = dht.readHumidity();
+
+  // Retry instan setelah 100ms jika pembacaan pertama NaN (khas saat slider DHT22 digeser di GUI Wokwi)
+  if (isnan(t) || isnan(h)) {
+    delay(100);
+    t = dht.readTemperature();
+    h = dht.readHumidity();
+  }
 
   if (isnan(t) || isnan(h)) {
     consecutiveDhtErrors++;

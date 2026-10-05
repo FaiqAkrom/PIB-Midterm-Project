@@ -80,7 +80,7 @@ const telemetrySchema = z.object({
 /**
  * Pipeline Pemrosesan Telemetri Terpusat (dipakai oleh MQTT & HTTP POST)
  */
-export async function processTelemetryIngestion(payload) {
+export async function processTelemetryIngestion(payload, source = 'mqtt') {
   const parsed = telemetrySchema.safeParse(payload);
   if (!parsed.success) {
     throw new Error(`Data telemetri tidak valid: ${parsed.error.issues.map(i => i.message).join(', ')}`);
@@ -99,7 +99,8 @@ export async function processTelemetryIngestion(payload) {
     humidity,
     gas,
     fan_on: fan ?? false,
-    sensor_ok: sensor_ok ?? true
+    sensor_ok: sensor_ok ?? true,
+    source
   });
 
   // JIKA SENSOR RUSAK / NILAI FALLBACK:
@@ -270,13 +271,17 @@ export async function processTelemetryIngestion(payload) {
   };
 }
 
+// Waktu telemetri MQTT terakhir dari Wokwi per silo
+export const lastMqttTimeBySilo = new Map();
+
 // Inisialisasi MQTT Broker Subscriber (hanya saat bukan mode test)
 if (process.env.NODE_ENV !== 'test') {
   mqttService.init({
     onTelemetry: async (data, topic) => {
       try {
-        const result = await processTelemetryIngestion(data);
-        console.log(`[INGEST SUCCESS] ${data.silo_id} -> Suhu: ${data.temp}°C, Lembap: ${data.humidity}%, Gas: ${data.gas}ppm | Risiko: ${result.riskLevel.toUpperCase()} (Skor: ${result.riskScore})`);
+        lastMqttTimeBySilo.set(data.silo_id, Date.now());
+        const result = await processTelemetryIngestion(data, 'wokwi');
+        console.log(`[INGEST SUCCESS] ${data.silo_id} (Wokwi) -> Suhu: ${data.temp}°C, Lembap: ${data.humidity}%, Gas: ${data.gas}ppm | Risiko: ${result.riskLevel.toUpperCase()} (Skor: ${result.riskScore})`);
       } catch (err) {
         console.error('[MQTT INGEST ERROR]:', err.message);
       }
@@ -441,11 +446,30 @@ app.delete('/api/silos/:id/fan/manual', (req, res) => {
   }
 });
 
-// POST /api/telemetry — Jalur HTTP alternatif (fallback jika MQTT tidak tersedia)
+// POST /api/telemetry — Jalur HTTP alternatif (fallback jika MQTT tidak tersedia / simulasi)
 app.post('/api/telemetry', async (req, res) => {
   try {
-    const result = await processTelemetryIngestion(req.body);
-    res.status(201).json({ success: true, message: 'Telemetri berhasil diproses via HTTP', data: result });
+    const { silo_id, force_override } = req.body;
+    const lastMqtt = lastMqttTimeBySilo.get(silo_id);
+    const isWokwiLive = Boolean(lastMqtt && (Date.now() - lastMqtt < 15000));
+
+    if (isWokwiLive && !force_override) {
+      return res.status(409).json({
+        success: false,
+        conflict: true,
+        liveDeviceActive: true,
+        message: `Silo '${silo_id}' sedang aktif menerima telemetri langsung dari Wokwi ESP32. Kirim 'force_override: true' jika memang ingin memaksakan simulasi manual.`
+      });
+    }
+
+    const result = await processTelemetryIngestion(req.body, 'simulator');
+    res.status(201).json({
+      success: true,
+      message: 'Telemetri berhasil diproses via HTTP',
+      source: 'simulator',
+      liveDeviceActive: isWokwiLive,
+      data: result
+    });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
   }

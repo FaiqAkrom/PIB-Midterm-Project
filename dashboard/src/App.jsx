@@ -60,8 +60,14 @@ export default function App() {
   const [isOnline, setIsOnline] = useState(true);
   const [timeRange, setTimeRange] = useState('1h');
   const [toastMessage, setToastMessage] = useState(null);
-  const [showSimulator, setShowSimulator] = useState(true);
+  const [showSimulator, setShowSimulator] = useState(false); // Default false agar fokus memantau live Wokwi
   const [currentTimeMs, setCurrentTimeMs] = useState(Date.now());
+  const [lastLiveTelemetryAt, setLastLiveTelemetryAt] = useState(null);
+  const [simulationMode, setSimulationMode] = useState('auto'); // 'auto' | 'manual'
+  const manualTelemetryTimeoutRef = useRef(null);
+
+  const isLiveDeviceActive = Boolean(lastLiveTelemetryAt && (currentTimeMs - lastLiveTelemetryAt < 12000));
+  const isSimulatorLocked = isLiveDeviceActive && simulationMode === 'auto';
 
   // Hitung mundur live dan sinkronisasi kedaluwarsa kunci manual
   useEffect(() => {
@@ -282,9 +288,17 @@ export default function App() {
           const rawG = Number(data.gas);
           const g = rawG > 150 ? Math.round(rawG / 10) : rawG;
 
-          setCurrentTemp(t);
-          setCurrentHum(h);
-          setCurrentGas(g);
+          if (data.source !== 'simulator') {
+            setLastLiveTelemetryAt(Date.now());
+          }
+
+          // Sinkronkan slider jika dalam mode auto (mengikuti Wokwi) atau jika paket berasal dari simulator itu sendiri
+          if (simulationMode === 'auto' || data.source === 'simulator') {
+            setCurrentTemp(t);
+            setCurrentHum(h);
+            setCurrentGas(g);
+          }
+
           setFanOn(Boolean(data.fan_on ?? data.fan));
           setSensorOk(data.sensor_ok !== false);
           setTelemetryHistory(prev => [data, ...prev.slice(0, 39)]);
@@ -381,8 +395,37 @@ export default function App() {
     }
   };
 
+  // Debounced push saat menggeser slider secara manual
+  const sendManualTelemetry = (newTemp, newHum, newGas = currentGas) => {
+    if (manualTelemetryTimeoutRef.current) {
+      clearTimeout(manualTelemetryTimeoutRef.current);
+    }
+    manualTelemetryTimeoutRef.current = setTimeout(async () => {
+      try {
+        await fetch(`http://localhost:3001/api/telemetry`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            silo_id: selectedSiloId,
+            temp: newTemp,
+            humidity: newHum,
+            gas: newGas * 10,
+            force_override: true
+          })
+        });
+      } catch (e) {
+        // ignore offline fallback
+      }
+    }, 400);
+  };
+
   // Quick preset apply
   const applyPreset = async (type) => {
+    if (isSimulatorLocked) {
+      showToast('⚠️ Wokwi sedang aktif! Aktifkan "Override Manual" jika ingin menguji preset.');
+      return;
+    }
+
     let t = 27.4, h = 64, g = 18;
     if (type === 'warn') {
       t = 31.8; h = 74; g = 39;
@@ -406,7 +449,8 @@ export default function App() {
           silo_id: selectedSiloId,
           temp: t,
           humidity: h,
-          gas: g * 10
+          gas: g * 10,
+          force_override: true
         })
       });
     } catch (e) {
@@ -705,56 +749,120 @@ export default function App() {
 
         {/* VIRTUAL STIMULATOR TOOLBAR (WHEN TOGGLED) */}
         {showSimulator && (
-          <div className="glass-card p-4 flex flex-col sm:flex-row items-center justify-between gap-3 border-2 border-[#B5EA3A]">
-            <div className="flex items-center gap-3">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-700">IoT Simulator:</span>
+          <div className={`glass-card p-4 flex flex-col lg:flex-row items-center justify-between gap-3 border-2 transition-all ${
+            isSimulatorLocked ? 'border-emerald-500/80 bg-emerald-50/40' : 'border-[#B5EA3A] bg-white/60'
+          }`}>
+            <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+              <div className="flex items-center gap-2">
+                <span className={`w-2.5 h-2.5 rounded-full ${isLiveDeviceActive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                  {isLiveDeviceActive ? 'ESP32 Wokwi Live:' : 'IoT Simulator:'}
+                </span>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
+                  isSimulatorLocked ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-amber-100 text-amber-800 border border-amber-300'
+                }`}>
+                  {isSimulatorLocked ? 'Read-Only (Terkunci ke Wokwi)' : 'Mode Manual Virtual'}
+                </span>
+              </div>
+
+              {/* Tombol switch mode jika Wokwi aktif */}
+              {isLiveDeviceActive && (
+                <button
+                  onClick={() => {
+                    const nextMode = simulationMode === 'auto' ? 'manual' : 'auto';
+                    setSimulationMode(nextMode);
+                    showToast(nextMode === 'manual' ? '⚡ Mode Manual Aktif (Override Wokwi)' : '🔒 Terkunci kembali ke Stream Wokwi');
+                  }}
+                  className={`text-xs px-2.5 py-1 rounded-lg border font-medium transition cursor-pointer ${
+                    simulationMode === 'manual'
+                      ? 'bg-amber-500 text-white border-amber-600 hover:bg-amber-600'
+                      : 'bg-white/80 text-slate-700 border-slate-300 hover:bg-white'
+                  }`}
+                  title={simulationMode === 'manual' ? 'Kembali ke data stream Wokwi' : 'Izinkan pengubahan slider dan preset secara manual'}
+                >
+                  {simulationMode === 'manual' ? 'Kembali ke Stream Wokwi' : 'Override Manual'}
+                </button>
+              )}
+
+              {/* Presets */}
               <div className="flex gap-1.5 text-xs font-semibold">
                 <button
+                  disabled={isSimulatorLocked}
                   onClick={() => applyPreset('safe')}
-                  className="px-3 py-1 rounded-lg bg-emerald-100 text-emerald-800 hover:bg-emerald-200 transition cursor-pointer"
+                  className={`px-3 py-1 rounded-lg transition ${
+                    isSimulatorLocked
+                      ? 'opacity-40 cursor-not-allowed bg-slate-200 text-slate-500'
+                      : 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200 cursor-pointer'
+                  }`}
+                  title={isSimulatorLocked ? 'Terkunci karena Wokwi aktif' : 'Terapkan kondisi normal'}
                 >
                   Normal
                 </button>
                 <button
+                  disabled={isSimulatorLocked}
                   onClick={() => applyPreset('warn')}
-                  className="px-3 py-1 rounded-lg bg-amber-100 text-amber-800 hover:bg-amber-200 transition cursor-pointer"
+                  className={`px-3 py-1 rounded-lg transition ${
+                    isSimulatorLocked
+                      ? 'opacity-40 cursor-not-allowed bg-slate-200 text-slate-500'
+                      : 'bg-amber-100 text-amber-800 hover:bg-amber-200 cursor-pointer'
+                  }`}
+                  title={isSimulatorLocked ? 'Terkunci karena Wokwi aktif' : 'Terapkan kondisi lembap'}
                 >
                   Lembap
                 </button>
                 <button
+                  disabled={isSimulatorLocked}
                   onClick={() => applyPreset('danger')}
-                  className="px-3 py-1 rounded-lg bg-rose-100 text-rose-800 hover:bg-rose-200 transition cursor-pointer"
+                  className={`px-3 py-1 rounded-lg transition ${
+                    isSimulatorLocked
+                      ? 'opacity-40 cursor-not-allowed bg-slate-200 text-slate-500'
+                      : 'bg-rose-100 text-rose-800 hover:bg-rose-200 cursor-pointer'
+                  }`}
+                  title={isSimulatorLocked ? 'Terkunci karena Wokwi aktif' : 'Terapkan bahaya jamur'}
                 >
                   Bahaya Jamur
                 </button>
               </div>
             </div>
 
-            <div className="flex items-center gap-4 text-xs font-mono">
-              <label className="flex items-center gap-1.5">
+            {/* Sliders */}
+            <div className="flex items-center gap-4 text-xs font-mono w-full lg:w-auto justify-end">
+              <label className={`flex items-center gap-1.5 ${isSimulatorLocked ? 'opacity-70' : ''}`}>
                 <span>Suhu:</span>
                 <input
                   type="range"
-                  min="20"
-                  max="42"
+                  min="10"
+                  max="60"
                   step="0.5"
+                  disabled={isSimulatorLocked}
                   value={currentTemp}
-                  onChange={(e) => setCurrentTemp(parseFloat(e.target.value))}
-                  className="w-20 accent-slate-800 cursor-pointer"
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    setCurrentTemp(val);
+                    sendManualTelemetry(val, currentHum);
+                  }}
+                  className={`w-20 accent-slate-800 ${isSimulatorLocked ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                  title={isSimulatorLocked ? 'Terkunci: Nilai dikendalikan sensor DHT22 Wokwi' : 'Geser untuk ubah suhu simulasi'}
                 />
                 <span className="font-bold">{currentTemp.toFixed(1)}°C</span>
               </label>
 
-              <label className="flex items-center gap-1.5">
+              <label className={`flex items-center gap-1.5 ${isSimulatorLocked ? 'opacity-70' : ''}`}>
                 <span>RH:</span>
                 <input
                   type="range"
-                  min="40"
-                  max="95"
+                  min="20"
+                  max="100"
                   step="1"
+                  disabled={isSimulatorLocked}
                   value={currentHum}
-                  onChange={(e) => setCurrentHum(parseFloat(e.target.value))}
-                  className="w-20 accent-slate-800 cursor-pointer"
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    setCurrentHum(val);
+                    sendManualTelemetry(currentTemp, val);
+                  }}
+                  className={`w-20 accent-slate-800 ${isSimulatorLocked ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                  title={isSimulatorLocked ? 'Terkunci: Nilai dikendalikan sensor DHT22 Wokwi' : 'Geser untuk ubah kelembapan simulasi'}
                 />
                 <span className="font-bold">{Math.round(currentHum)}%</span>
               </label>

@@ -179,7 +179,7 @@ export async function getSiloById(id) {
   return memoryStore.silos.find(s => s.id === id) || memoryStore.silos[0];
 }
 
-export async function saveTelemetry({ silo_id, temp, humidity, gas, fan_on, sensor_ok = true }) {
+export async function saveTelemetry({ silo_id, temp, humidity, gas, fan_on, sensor_ok = true, source = 'device' }) {
   const record = {
     silo_id,
     temp: Number(temp),
@@ -187,6 +187,7 @@ export async function saveTelemetry({ silo_id, temp, humidity, gas, fan_on, sens
     gas: Number(gas),
     fan_on: Boolean(fan_on),
     sensor_ok: Boolean(sensor_ok),
+    source,
     created_at: new Date().toISOString()
   };
 
@@ -209,7 +210,7 @@ export async function saveTelemetry({ silo_id, temp, humidity, gas, fan_on, sens
     [silo_id, temp, humidity, gas, fan_on]
   );
   if (rows && rows[0]) {
-    const emitted = { ...rows[0], sensor_ok: Boolean(sensor_ok) };
+    const emitted = { ...rows[0], sensor_ok: Boolean(sensor_ok), source };
     dataEvents.emit('telemetry', emitted);
     return emitted;
   }
@@ -217,10 +218,18 @@ export async function saveTelemetry({ silo_id, temp, humidity, gas, fan_on, sens
   // Supabase
   if (isSupabaseConfigured) {
     try {
-      const { data, error } = await supabase.from('telemetry').insert([record]).select().single();
+      const { data, error } = await supabase.from('telemetry').insert([{
+        silo_id,
+        temp: Number(temp),
+        humidity: Number(humidity),
+        gas: Number(gas),
+        fan_on: Boolean(fan_on),
+        sensor_ok: Boolean(sensor_ok)
+      }]).select().single();
       if (!error && data) {
-        dataEvents.emit('telemetry', data);
-        return data;
+        const emitted = { ...data, source };
+        dataEvents.emit('telemetry', emitted);
+        return emitted;
       }
     } catch (e) {
       console.warn('[DB SUPABASE ERROR] Gagal insert telemetry:', e.message);

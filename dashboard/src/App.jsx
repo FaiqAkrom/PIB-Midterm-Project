@@ -39,9 +39,9 @@ export default function App() {
 
   // Telemetry & Fan State
   const [telemetryHistory, setTelemetryHistory] = useState([]);
-  const [currentTemp, setCurrentTemp] = useState(30.0);
+  const [currentTemp, setCurrentTemp] = useState(27.5);
   const [currentHum, setCurrentHum] = useState(65.0);
-  const [currentGas, setCurrentGas] = useState(18);
+  const [currentGas, setCurrentGas] = useState(180);
   const [fanOn, setFanOn] = useState(false);
   const [isFanManual, setIsFanManual] = useState(false);
   const [manualOverrideExpiresAt, setManualOverrideExpiresAt] = useState(null); // epoch ms
@@ -253,10 +253,10 @@ export default function App() {
         if (teleRes?.data && teleRes.data.length > 0) {
           setTelemetryHistory(teleRes.data);
           const latest = teleRes.data[0];
-          setCurrentTemp(Number(latest.temp) || 30.0);
+          setCurrentTemp(Number(latest.temp) || 27.5);
           setCurrentHum(Number(latest.humidity) || 65.0);
-          const rawGas = Number(latest.gas) || 18;
-          setCurrentGas(rawGas > 150 ? Math.round(rawGas / 10) : rawGas);
+          const rawGas = Number(latest.gas) || 180;
+          setCurrentGas(rawGas);
           setFanOn(Boolean(latest.fan_on));
           setSensorOk(latest.sensor_ok !== false); // undefined => true (sensor lama tanpa field)
         }
@@ -285,8 +285,7 @@ export default function App() {
         if (data.silo_id === selectedSiloId) {
           const t = Number(data.temp);
           const h = Number(data.humidity);
-          const rawG = Number(data.gas);
-          const g = rawG > 150 ? Math.round(rawG / 10) : rawG;
+          const g = Number(data.gas) || 180;
 
           if (data.source !== 'simulator') {
             setLastLiveTelemetryAt(Date.now());
@@ -329,7 +328,13 @@ export default function App() {
     const profile = localeData?.profiles?.[cultureProfile];
     const levels = profile?.levels;
 
-    if (currentHum >= 75 || currentGas >= 50 || currentTemp >= 34) {
+    // Ambang Batas Evaluasi Standar Lumbung Silo-Guard:
+    // Bahaya: Gas >= 700 ppm, Suhu >= 34°C, RH >= 80%, atau Kombinasi Panas Lembap (RH >= 75% & Suhu >= 32°C)
+    const isDanger = (currentHum >= 75 && currentTemp >= 32) || currentHum >= 80 || currentTemp >= 34 || currentGas >= 700;
+    // Waspada: Gas >= 400 ppm, Kelembapan >= 70%, atau Suhu >= 30.5°C
+    const isWarning = !isDanger && (currentHum >= 70 || currentGas >= 400 || currentTemp >= 30.5);
+
+    if (isDanger) {
       return {
         level: 'danger',
         label: levels?.bahaya?.label || 'Bahaya (Kritis)',
@@ -337,7 +342,7 @@ export default function App() {
         needleDeg: 45,
         pestRisk: cultureProfile === 'sunda' ? 'Kritis' : cultureProfile === 'jawa' ? 'Bebaya Dhuwur' : 'Risiko Tinggi'
       };
-    } else if (currentHum >= 70 || currentGas >= 35 || currentTemp >= 31) {
+    } else if (isWarning) {
       return {
         level: 'warning',
         label: levels?.waspada?.label || 'Waspada',
@@ -409,7 +414,7 @@ export default function App() {
             silo_id: selectedSiloId,
             temp: newTemp,
             humidity: newHum,
-            gas: newGas * 10,
+            gas: newGas,
             force_override: true
           })
         });
@@ -426,12 +431,12 @@ export default function App() {
       return;
     }
 
-    let t = 27.4, h = 64, g = 18;
+    let t = 27.4, h = 64, g = 180;
     if (type === 'warn') {
-      t = 31.8; h = 74; g = 39;
+      t = 31.8; h = 74; g = 450;
       showToast('⚠️ Skenario Lembap diterapkan');
     } else if (type === 'danger') {
-      t = 36.5; h = 82; g = 85;
+      t = 36.5; h = 82; g = 850;
       showToast('🚨 Skenario Bahaya Jamur diterapkan');
     } else {
       showToast('✅ Skenario Normal Sejuk diterapkan');
@@ -449,7 +454,7 @@ export default function App() {
           silo_id: selectedSiloId,
           temp: t,
           humidity: h,
-          gas: g * 10,
+          gas: g,
           force_override: true
         })
       });
@@ -689,15 +694,24 @@ export default function App() {
 
             {/* Padi Ciherang Commodity Card */}
             <div
-              onClick={() => showToast('Komoditas Padi Ciherang (Silo 01): Kelembapan tumpukan terpantau')}
-              className="glass-card p-2 flex flex-col justify-between w-28 h-24 relative overflow-hidden group hover:scale-[1.02] transition cursor-pointer"
+              onClick={() => {
+                setSelectedSiloId('silo-01');
+                showToast('Komoditas Padi Ciherang (Silo 01) dipilih: Kelembapan tumpukan terpantau');
+              }}
+              className={`glass-card p-2 flex flex-col justify-between w-28 h-24 relative overflow-hidden group hover:scale-[1.02] transition cursor-pointer ${
+                selectedSiloId === 'silo-01' ? 'ring-2 ring-emerald-500/50' : ''
+              }`}
             >
               <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-900 z-10 drop-shadow-sm">
-                <span className="w-2 h-2 rounded-full bg-amber-400 shadow-sm" /> Padi Ciherang
+                <span className={`w-2 h-2 rounded-full shadow-sm ${
+                  selectedSiloId === 'silo-01'
+                    ? (evaluatedStatus.level === 'danger' ? 'bg-rose-500' : evaluatedStatus.level === 'warning' ? 'bg-amber-400' : 'bg-emerald-500')
+                    : 'bg-emerald-500'
+                }`} /> Padi Ciherang
               </div>
               <div className="absolute inset-0 z-0">
                 <img
-                  src="https://images.unsplash.com/photo-1536304929831-ee1ca9d44906?auto=format&fit=crop&w=300&q=80"
+                  src="https://images.unsplash.com/photo-1586201375761-83865001e31c?auto=format&fit=crop&w=300&q=80"
                   alt="Gabah Padi Ciherang"
                   className="w-full h-full object-cover rounded-2xl opacity-85 group-hover:scale-105 transition-all duration-300"
                 />
@@ -706,27 +720,52 @@ export default function App() {
               {/* Pest / Status risk badge */}
               <div className="z-10 mt-auto">
                 <div className={`rounded-full px-2 py-0.5 text-[9px] font-bold flex items-center gap-1 shadow-sm backdrop-blur-sm ${
-                  evaluatedStatus.level === 'danger' ? 'bg-red-500/90 text-white' : 'bg-lime-500/90 text-black'
+                  selectedSiloId === 'silo-01'
+                    ? (evaluatedStatus.level === 'danger'
+                        ? 'bg-rose-600/90 text-white'
+                        : evaluatedStatus.level === 'warning'
+                        ? 'bg-amber-500/90 text-white'
+                        : 'bg-emerald-500/90 text-white')
+                    : 'bg-emerald-500/90 text-white'
                 }`}>
-                  <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                  </svg>
-                  {evaluatedStatus.pestRisk}
+                  {selectedSiloId === 'silo-01' && evaluatedStatus.level === 'danger' ? (
+                    <svg className="w-2.5 h-2.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                  ) : selectedSiloId === 'silo-01' && evaluatedStatus.level === 'warning' ? (
+                    <svg className="w-2.5 h-2.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                  ) : (
+                    <svg className="w-2.5 h-2.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                  <span className="truncate">{selectedSiloId === 'silo-01' ? evaluatedStatus.pestRisk : 'Kondisi Aman'}</span>
                 </div>
               </div>
             </div>
 
             {/* Padi IR-64 Commodity Card */}
             <div
-              onClick={() => showToast('Komoditas Padi IR-64 (Silo 02): Terproteksi sistem lumbung')}
-              className="glass-card p-2 flex flex-col justify-between w-28 h-24 relative overflow-hidden group hover:scale-[1.02] transition cursor-pointer"
+              onClick={() => {
+                setSelectedSiloId('silo-02');
+                showToast('Komoditas Padi IR-64 (Silo 02) dipilih: Terproteksi sistem lumbung');
+              }}
+              className={`glass-card p-2 flex flex-col justify-between w-28 h-24 relative overflow-hidden group hover:scale-[1.02] transition cursor-pointer ${
+                selectedSiloId === 'silo-02' ? 'ring-2 ring-emerald-500/50' : ''
+              }`}
             >
               <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-900 z-10 drop-shadow-sm">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-sm" /> Padi IR-64
+                <span className={`w-2 h-2 rounded-full shadow-sm ${
+                  selectedSiloId === 'silo-02'
+                    ? (evaluatedStatus.level === 'danger' ? 'bg-rose-500' : evaluatedStatus.level === 'warning' ? 'bg-amber-400' : 'bg-emerald-500')
+                    : 'bg-emerald-500'
+                }`} /> Padi IR-64
               </div>
               <div className="absolute inset-0 z-0">
                 <img
-                  src="https://images.unsplash.com/photo-1586201375761-83865001e31c?auto=format&fit=crop&w=300&q=80"
+                  src="https://images.unsplash.com/photo-1536304993881-ff6e9eefa2a6?auto=format&fit=crop&w=300&q=80"
                   alt="Bulir Gabah Padi IR-64"
                   className="w-full h-full object-cover rounded-2xl opacity-85 group-hover:scale-105 transition-all duration-300"
                 />
@@ -735,12 +774,14 @@ export default function App() {
               {/* Quality / Protection badge */}
               <div className="z-10 mt-auto">
                 <div className={`rounded-full px-2 py-0.5 text-[9px] font-bold flex items-center gap-1 shadow-sm backdrop-blur-sm ${
-                  evaluatedStatus.level === 'danger' ? 'bg-amber-500/90 text-white' : 'bg-emerald-500/90 text-white'
+                  selectedSiloId === 'silo-02'
+                    ? (evaluatedStatus.level === 'danger' ? 'bg-rose-600/90 text-white' : evaluatedStatus.level === 'warning' ? 'bg-amber-500/90 text-white' : 'bg-emerald-500/90 text-white')
+                    : 'bg-emerald-500/90 text-white'
                 }`}>
-                  <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                  <svg className="w-2.5 h-2.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
-                  {evaluatedStatus.level === 'danger' ? 'Perlu Cek' : 'Kualitas Baik'}
+                  <span className="truncate">{selectedSiloId === 'silo-02' ? (evaluatedStatus.level === 'danger' ? 'Perlu Cek' : evaluatedStatus.level === 'warning' ? 'Waspada' : 'Kualitas Baik') : 'Kualitas Baik'}</span>
                 </div>
               </div>
             </div>
